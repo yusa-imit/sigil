@@ -1,12 +1,18 @@
 .vscode
 
 # zig
-.zig-cache
-zig-out
+.zig-cache/
+zig-out/
+zig-pkg/
 *.a
 *.so
 *.dylib
 *.o
+*.log
+*.db
+test_*
+/test
+verify_*
 
 # Claude Code
 .claude/settings.local.json
