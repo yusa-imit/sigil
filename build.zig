@@ -46,6 +46,8 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 
+    addTidyStep(b, test_step);
+
     // Benchmarks
     const bench = b.addExecutable(.{
         .name = "sigil-bench",
@@ -71,4 +73,24 @@ pub fn build(b: *std.Build) void {
     });
     const docs_step = b.step("docs", "Generate API documentation");
     docs_step.dependOn(&docs.step);
+}
+
+/// Wires the Tiger Style lint (`tools/tidy.zig`): its own unit tests run as
+/// part of `test_step`, while the real repo-wide scan is its own `tidy`
+/// step until plan 001 item 4 fixes today's known violations and makes it
+/// a hard gate on `test`.
+fn addTidyStep(b: *std.Build, test_step: *std.Build.Step) void {
+    const tidy_mod = b.createModule(.{
+        .root_source_file = b.path("tools/tidy.zig"),
+        .target = b.graph.host,
+    });
+    const tidy_tests = b.addTest(.{ .root_module = tidy_mod });
+    const run_tidy_tests = b.addRunArtifact(tidy_tests);
+    test_step.dependOn(&run_tidy_tests.step);
+
+    const tidy_exe = b.addExecutable(.{ .name = "tidy", .root_module = tidy_mod });
+    const run_tidy = b.addRunArtifact(tidy_exe);
+    run_tidy.addArgs(&.{ "--root", b.pathFromRoot(".") });
+    const tidy_step = b.step("tidy", "Run the Tiger Style tidy lint over the repo");
+    tidy_step.dependOn(&run_tidy.step);
 }
