@@ -9,6 +9,8 @@
         "build.zig.zon",
         "src",
         "bench",
+        "tools",
+        "tidy_baseline.txt",
         "LICENSE",
         "README.md",
     },
