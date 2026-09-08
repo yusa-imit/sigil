@@ -1,4 +1,5 @@
-//! sigil.core — Value union, arena-owned ValueTree, Number parsing/formatting, Timestamp, Diagnostics (line:col), UTF-8/escape utils.
+//! sigil.core — Value union, arena-owned ValueTree, Number parsing/formatting, Timestamp,
+//! Diagnostics (line:col), UTF-8/escape utils.
 //!
 //! Planned files (see docs/PRD.md):
 //!   - `core/value.zig`

@@ -1,4 +1,5 @@
-//! sigil.proto — Protobuf wire format (varint/64/len/32) with comptime field-number mapping — no schema compiler.
+//! sigil.proto — Protobuf wire format (varint/64/len/32) with comptime field-number mapping —
+//! no schema compiler.
 //!
 //! Planned files (see docs/PRD.md):
 //!   - `proto/wire.zig`

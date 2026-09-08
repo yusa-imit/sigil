@@ -1,4 +1,5 @@
-//! sigil.reflect — comptime struct ↔ Value mapping: parse(T), stringify(T), field options (rename, defaults, deny_unknown), custom hooks, Schema(T) validation.
+//! sigil.reflect — comptime struct ↔ Value mapping: parse(T), stringify(T), field options
+//! (rename, defaults, deny_unknown), custom hooks, Schema(T) validation.
 //!
 //! Planned files (see docs/PRD.md):
 //!   - `reflect/parse.zig`

@@ -1,4 +1,5 @@
-//! sigil.path — JSON Pointer (RFC 6901), JSONPath (RFC 9535 subset), JSON Patch (RFC 6902), Merge Patch (RFC 7386) — all over Value.
+//! sigil.path — JSON Pointer (RFC 6901), JSONPath (RFC 9535 subset), JSON Patch (RFC 6902),
+//! Merge Patch (RFC 7386) — all over Value.
 //!
 //! Planned files (see docs/PRD.md):
 //!   - `path/pointer.zig`
