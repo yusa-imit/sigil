@@ -1,3 +1,5 @@
+//! sigil CLI — `sigil version` / `sigil --help`. Only real entry point today; every other
+//! module is a Phase 1+ stub.
 const std = @import("std");
 const sigil = @import("sigil");
 

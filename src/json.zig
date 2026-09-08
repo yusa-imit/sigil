@@ -1,4 +1,5 @@
-//! sigil.json — RFC 8259 pull scanner, DOM builder, pretty/minify writer, direct-to-struct streaming parse.
+//! sigil.json — RFC 8259 pull scanner, DOM builder, pretty/minify writer, direct-to-struct
+//! streaming parse.
 //!
 //! Planned files (see docs/PRD.md):
 //!   - `json/scanner.zig`

@@ -1,4 +1,5 @@
-//! sigil.yaml — YAML 1.2 core-schema subset: block/flow collections, scalars, anchors/aliases (bounded), multi-doc.
+//! sigil.yaml — YAML 1.2 core-schema subset: block/flow collections, scalars, anchors/aliases
+//! (bounded), multi-doc.
 //!
 //! Planned files (see docs/PRD.md):
 //!   - `yaml/scanner.zig`

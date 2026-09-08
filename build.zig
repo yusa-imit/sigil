@@ -1,6 +1,7 @@
 const std = @import("std");
 
-/// Build graph for sigil — Marks that carry meaning — serialization and configuration formats for Zig
+/// Build graph for sigil — Marks that carry meaning — serialization and configuration formats
+/// for Zig
 ///
 /// Steps:
 ///   zig build            — build library + CLI
@@ -75,10 +76,9 @@ pub fn build(b: *std.Build) void {
     docs_step.dependOn(&docs.step);
 }
 
-/// Wires the Tiger Style lint (`tools/tidy.zig`): its own unit tests run as
-/// part of `test_step`, while the real repo-wide scan is its own `tidy`
-/// step until plan 001 item 4 fixes today's known violations and makes it
-/// a hard gate on `test`.
+/// Wires the Tiger Style lint (`tools/tidy.zig`): its own unit tests and the real repo-wide
+/// scan are both hard dependencies of `test_step`, so a tidy violation fails `zig build test`.
+/// `zig build tidy` remains available standalone for a scan without the rest of the suite.
 fn addTidyStep(b: *std.Build, test_step: *std.Build.Step) void {
     const tidy_mod = b.createModule(.{
         .root_source_file = b.path("tools/tidy.zig"),
@@ -91,6 +91,8 @@ fn addTidyStep(b: *std.Build, test_step: *std.Build.Step) void {
     const tidy_exe = b.addExecutable(.{ .name = "tidy", .root_module = tidy_mod });
     const run_tidy = b.addRunArtifact(tidy_exe);
     run_tidy.addArgs(&.{ "--root", b.pathFromRoot(".") });
+    test_step.dependOn(&run_tidy.step);
+
     const tidy_step = b.step("tidy", "Run the Tiger Style tidy lint over the repo");
     tidy_step.dependOn(&run_tidy.step);
 }

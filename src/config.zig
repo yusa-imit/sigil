@@ -1,4 +1,5 @@
-//! sigil.config — Layered config: defaults < files < env < args; schema validation; change watch hook.
+//! sigil.config — Layered config: defaults < files < env < args; schema validation; change
+//! watch hook.
 //!
 //! Planned files (see docs/PRD.md):
 //!   - `config/layered.zig`
