@@ -6,10 +6,13 @@
 //! diverges (`std.fs` on 0.15, `std.Io.Dir`/`std.Io.File` on 0.16).
 //!
 //! Vendored from `citadel/templates/tidy/tidy.zig` (the kingdom reference
-//! lint) with one sigil-only addition: the `wire_usize` ban rule, required by
-//! plan 001 item 3 and `REALM.md`'s "Numeric exactness" rule — `usize` varies
-//! width across targets and must never appear in a type this library
-//! serializes to bytes.
+//! lint) with two sigil-only additions: the `wire_usize` ban rule (plan 001
+//! item 3, `REALM.md`'s "Numeric exactness" rule — `usize` varies width
+//! across targets and must never appear in a type this library serializes to
+//! bytes), and plan 001 item 6's 0.16 lock-in — bans on removed-in-0.16 APIs
+//! (`fs.cwd()`, `std.net`, `std.Thread.{Mutex,Condition,Semaphore,RwLock}`, a
+//! bare `ArrayList` `.{}` literal, `mem.indexOf*`) plus a check requiring an
+//! `error.Canceled` prong in any `switch (err)` block, all scoped to `src/`.
 //!
 //! Scans `src/`, `bench/`, `tests/`, and `build.zig` only (see `scan_roots`)
 //! — `tools/` (this file's own directory) is deliberately not self-scanned,
@@ -421,6 +424,15 @@ const BanId = enum {
     fixme_comment,
     dbg_call,
     wire_usize,
+    fs_cwd,
+    std_net,
+    thread_mutex,
+    thread_condition,
+    thread_semaphore,
+    thread_rwlock,
+    array_list_bare_literal,
+    mem_indexof,
+    mem_last_indexof,
 };
 
 const BanRule = struct { id: BanId, needle: []const u8, replacement: []const u8 };
@@ -491,6 +503,51 @@ const ban_rules = [_]BanRule{
         .needle = ": usize",
         .replacement = "use u32/u64 in wire/format types; usize only at std slice boundaries",
     },
+    .{
+        .id = .fs_cwd,
+        .needle = "fs.cwd()",
+        .replacement = "use Io.Dir.cwd() with an injected `io: Io` (removed in 0.16)",
+    },
+    .{
+        .id = .std_net,
+        .needle = "std.net",
+        .replacement = "use Io.net (std.net does not exist in 0.16)",
+    },
+    .{
+        .id = .thread_mutex,
+        .needle = "std.Thread.Mutex",
+        .replacement = "use Io.Mutex (std.Thread.Mutex is removed in 0.16)",
+    },
+    .{
+        .id = .thread_condition,
+        .needle = "std.Thread.Condition",
+        .replacement = "use Io.Condition (std.Thread.Condition is removed in 0.16)",
+    },
+    .{
+        .id = .thread_semaphore,
+        .needle = "std.Thread.Semaphore",
+        .replacement = "use Io.Semaphore (std.Thread.Semaphore is removed in 0.16)",
+    },
+    .{
+        .id = .thread_rwlock,
+        .needle = "std.Thread.RwLock",
+        .replacement = "use Io.RwLock (std.Thread.RwLock is removed in 0.16)",
+    },
+    .{
+        .id = .array_list_bare_literal,
+        .needle = "= .{}",
+        .replacement = "use `.empty` or `.initCapacity(gpa, n)` (bare `.{}` errors in 0.16)",
+    },
+    .{
+        .id = .mem_indexof,
+        .needle = "mem.indexOf",
+        .replacement = "use mem.find*/findPos*/findAny* — see zig-0.16.md, not a blind rename",
+    },
+    .{
+        .id = .mem_last_indexof,
+        .needle = "mem.lastIndexOf",
+        .replacement = "use mem.findLast* — see zig-0.16.md, not a blind rename",
+    },
 };
 
 fn exemptFromPanicOrPrint(path: []const u8) bool {
@@ -504,6 +561,17 @@ fn banApplies(id: BanId, path: []const u8, line: []const u8) bool {
         .crypto_random => isUnderSrc(path),
         .anyerror_pub => std.mem.indexOf(u8, line, "pub fn") != null,
         .wire_usize => isWireFormatPath(path) and looksLikeStructField(line),
+        .fs_cwd,
+        .std_net,
+        .thread_mutex,
+        .thread_condition,
+        .thread_semaphore,
+        .thread_rwlock,
+        .mem_indexof,
+        .mem_last_indexof,
+        => isUnderSrc(path),
+        .array_list_bare_literal => isUnderSrc(path) and
+            std.mem.indexOf(u8, line, "ArrayList") != null,
         .catch_unreachable,
         .self_alias,
         .usingnamespace_kw,
@@ -622,6 +690,61 @@ fn reconcileOne(
     }
 }
 
+fn spanContains(lines: []const []const u8, needle: []const u8) bool {
+    for (lines) |line| {
+        if (std.mem.indexOf(u8, line, needle) != null) return true;
+    }
+    return false;
+}
+
+/// A block that opens and closes its braces within a single line (e.g. a
+/// trivial one-line `switch`), so `measureFunctionLines`'s multi-line walk
+/// never sees `started` flip true and would otherwise miss it entirely.
+fn isSelfContainedBlock(line: []const u8) bool {
+    return braceDelta(line) == 0 and std.mem.indexOf(u8, line, "{") != null;
+}
+
+/// Check 6: a `switch (err)` block over an I/O error set must carry an
+/// `error.Canceled` prong (kingdom convention, `zig-0.16.md`) — cancelation
+/// is a first-class, refusable protocol in 0.16, riding in almost every I/O
+/// error set, and a switch that omits the prong either fails to compile
+/// (truly exhaustive) or silently swallows it behind `else`. Scoped to
+/// `src/`, where such switches originate; reuses `measureFunctionLines`'s
+/// brace matcher since `switch (err) {` opens a brace exactly like a `fn`.
+/// Not every `switch (err)` is over an I/O error set (a parser's own error
+/// set never carries `Canceled`), so a `// proof:` comment on the switch
+/// line or the line above suppresses this check, mirroring the same escape
+/// hatch `catch_unreachable` already uses via `hasProof`.
+pub fn checkErrorCanceledProng(
+    allocator: Allocator,
+    path: []const u8,
+    lines: []const []const u8,
+) ![]Finding {
+    var out: std.ArrayList(Finding) = .empty;
+    errdefer out.deinit(allocator);
+    if (!isUnderSrc(path)) return out.toOwnedSlice(allocator);
+    var idx: usize = 0;
+    while (idx < lines.len) : (idx += 1) {
+        if (std.mem.indexOf(u8, lines[idx], "switch (err)") == null) continue;
+        if (hasProof(lines, idx)) continue;
+        const span = measureFunctionLines(lines, idx) orelse blk: {
+            if (isSelfContainedBlock(lines[idx])) break :blk 1;
+            continue;
+        };
+        std.debug.assert(span >= 1);
+        std.debug.assert(idx + span <= lines.len);
+        if (spanContains(lines[idx .. idx + span], "error.Canceled")) continue;
+        try addFinding(&out, allocator, .{
+            .path = path,
+            .line = idx + 1,
+            .rule = "error-canceled-prong",
+            .message = try allocator.dupe(u8, "`switch (err)` has no `error.Canceled` prong"),
+            .replacement = "add `error.Canceled => return err,` (or `// proof:` if not I/O)",
+        });
+    }
+    return out.toOwnedSlice(allocator);
+}
+
 fn appendChecked(findings: *std.ArrayList(Finding), allocator: Allocator, items: []Finding) !void {
     defer allocator.free(items);
 
@@ -645,6 +768,7 @@ pub fn lintLines(
     try appendChecked(findings, allocator, fn_findings);
     try appendChecked(findings, allocator, try checkBanList(allocator, path, lines));
     try appendChecked(findings, allocator, try checkFileLength(allocator, path, lines));
+    try appendChecked(findings, allocator, try checkErrorCanceledProng(allocator, path, lines));
 }
 
 /// Convenience wrapper over `lintLines` that splits raw file `content` first.
@@ -1271,4 +1395,158 @@ test "formatFindings renders path:line: rule: message [replacement]" {
     defer gpa.free(out);
     const expected = "src/a.zig:3: ban-list: banned pattern `dbg(` [remove it]";
     try std.testing.expect(std.mem.indexOf(u8, out, expected) != null);
+}
+
+test "checkBanList flags removed-in-0.16 fs/net/thread APIs, scoped to src/" {
+    const gpa = std.testing.allocator;
+
+    const cwd_in_src = try checkBanList(gpa, "src/a.zig", &.{"    var d = std.fs.cwd();"});
+    defer freeFindings(gpa, cwd_in_src);
+    try std.testing.expectEqual(@as(usize, 1), cwd_in_src.len);
+
+    const cwd_outside_src = try checkBanList(gpa, "tests/a.zig", &.{"    var d = std.fs.cwd();"});
+    defer freeFindings(gpa, cwd_outside_src);
+    try std.testing.expectEqual(@as(usize, 0), cwd_outside_src.len);
+
+    const net_line = "    const a: std.net.Address = undefined;";
+    const net_in_src = try checkBanList(gpa, "src/a.zig", &.{net_line});
+    defer freeFindings(gpa, net_in_src);
+    try std.testing.expectEqual(@as(usize, 1), net_in_src.len);
+
+    const mutex_line = "    lock: std.Thread.Mutex = .{},";
+    const mutex_in_src = try checkBanList(gpa, "src/a.zig", &.{mutex_line});
+    defer freeFindings(gpa, mutex_in_src);
+    try std.testing.expectEqual(@as(usize, 1), mutex_in_src.len);
+
+    const cond_line = "    cv: std.Thread.Condition = .{},";
+    const cond_in_src = try checkBanList(gpa, "src/a.zig", &.{cond_line});
+    defer freeFindings(gpa, cond_in_src);
+    try std.testing.expectEqual(@as(usize, 1), cond_in_src.len);
+
+    const sem_line = "    sem: std.Thread.Semaphore = .{},";
+    const sem_in_src = try checkBanList(gpa, "src/a.zig", &.{sem_line});
+    defer freeFindings(gpa, sem_in_src);
+    try std.testing.expectEqual(@as(usize, 1), sem_in_src.len);
+
+    const rwlock_line = "    lk: std.Thread.RwLock = .{},";
+    const rwlock_in_src = try checkBanList(gpa, "src/a.zig", &.{rwlock_line});
+    defer freeFindings(gpa, rwlock_in_src);
+    try std.testing.expectEqual(@as(usize, 1), rwlock_in_src.len);
+}
+
+test "checkBanList flags a bare ArrayList `.{}` literal but not `.empty`" {
+    const gpa = std.testing.allocator;
+
+    const bare = try checkBanList(gpa, "src/a.zig", &.{"    var l: std.ArrayList(u8) = .{};"});
+    defer freeFindings(gpa, bare);
+    try std.testing.expectEqual(@as(usize, 1), bare.len);
+
+    const empty_line = "    var l: std.ArrayList(u8) = .empty;";
+    const dot_empty = try checkBanList(gpa, "src/a.zig", &.{empty_line});
+    defer freeFindings(gpa, dot_empty);
+    try std.testing.expectEqual(@as(usize, 0), dot_empty.len);
+
+    const unrelated_bare = try checkBanList(gpa, "src/a.zig", &.{"    var o: Options = .{};"});
+    defer freeFindings(gpa, unrelated_bare);
+    try std.testing.expectEqual(@as(usize, 0), unrelated_bare.len);
+}
+
+test "checkBanList flags mem.indexOf* and steers toward find*" {
+    const gpa = std.testing.allocator;
+
+    const findings = try checkBanList(
+        gpa,
+        "src/a.zig",
+        &.{"    const i = std.mem.indexOfPos(u8, s, 0, needle);"},
+    );
+    defer freeFindings(gpa, findings);
+    try std.testing.expectEqual(@as(usize, 1), findings.len);
+    try std.testing.expect(std.mem.indexOf(u8, findings[0].replacement.?, "find") != null);
+}
+
+test "checkBanList flags mem.lastIndexOf separately from mem.indexOf" {
+    const gpa = std.testing.allocator;
+    const line = "    const i = std.mem.lastIndexOf(u8, s, needle);";
+
+    const findings = try checkBanList(gpa, "src/a.zig", &.{line});
+    defer freeFindings(gpa, findings);
+    try std.testing.expectEqual(@as(usize, 1), findings.len);
+    try std.testing.expectEqualStrings("banned pattern `mem.lastIndexOf`", findings[0].message);
+}
+
+test "checkErrorCanceledProng flags a switch(err) missing the Canceled prong" {
+    const gpa = std.testing.allocator;
+    const lines = [_][]const u8{
+        "fn f() !void {",
+        "    doThing() catch |err| switch (err) {",
+        "        error.OutOfMemory => return err,",
+        "        error.InvalidSyntax => return .invalid,",
+        "    };",
+        "}",
+    };
+
+    const findings = try checkErrorCanceledProng(gpa, "src/a.zig", &lines);
+    defer freeFindings(gpa, findings);
+    try std.testing.expectEqual(@as(usize, 1), findings.len);
+    try std.testing.expectEqualStrings("error-canceled-prong", findings[0].rule);
+}
+
+test "checkErrorCanceledProng passes a switch(err) with a Canceled prong" {
+    const gpa = std.testing.allocator;
+    const lines = [_][]const u8{
+        "fn f() !void {",
+        "    doThing() catch |err| switch (err) {",
+        "        error.Canceled => return err,",
+        "        error.OutOfMemory => return err,",
+        "    };",
+        "}",
+    };
+
+    const findings = try checkErrorCanceledProng(gpa, "src/a.zig", &lines);
+    defer freeFindings(gpa, findings);
+    try std.testing.expectEqual(@as(usize, 0), findings.len);
+}
+
+test "checkErrorCanceledProng is scoped to src/" {
+    const gpa = std.testing.allocator;
+    const lines = [_][]const u8{
+        "fn f() !void {",
+        "    doThing() catch |err| switch (err) {",
+        "        error.OutOfMemory => return err,",
+        "    };",
+        "}",
+    };
+
+    const findings = try checkErrorCanceledProng(gpa, "tests/a.zig", &lines);
+    defer freeFindings(gpa, findings);
+    try std.testing.expectEqual(@as(usize, 0), findings.len);
+}
+
+test "checkErrorCanceledProng is suppressed by a // proof: comment" {
+    const gpa = std.testing.allocator;
+    const lines = [_][]const u8{
+        "fn f() !void {",
+        "    // proof: ParseError never carries Canceled",
+        "    doThing() catch |err| switch (err) {",
+        "        error.InvalidSyntax => return err,",
+        "    };",
+        "}",
+    };
+
+    const findings = try checkErrorCanceledProng(gpa, "src/a.zig", &lines);
+    defer freeFindings(gpa, findings);
+    try std.testing.expectEqual(@as(usize, 0), findings.len);
+}
+
+test "checkErrorCanceledProng catches a self-contained one-line switch" {
+    const gpa = std.testing.allocator;
+    const lines = [_][]const u8{
+        "fn f() !void {",
+        "    doThing() catch |err| switch (err) { error.OutOfMemory => return err };",
+        "}",
+    };
+
+    const findings = try checkErrorCanceledProng(gpa, "src/a.zig", &lines);
+    defer freeFindings(gpa, findings);
+    try std.testing.expectEqual(@as(usize, 1), findings.len);
 }
