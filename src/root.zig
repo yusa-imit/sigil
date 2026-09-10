@@ -24,3 +24,26 @@ pub const config = @import("config.zig");
 test {
     std.testing.refAllDecls(@This());
 }
+
+test "io convention: every format module puts `io` in the same parameter slot" {
+    const formats = .{ json, toml, yaml, msgpack, cbor, proto, csv };
+    inline for (formats) |module| {
+        if (@hasDecl(module, "parseFile")) {
+            const params = @typeInfo(@TypeOf(module.parseFile)).@"fn".params;
+            try std.testing.expectEqual(@as(usize, 6), params.len);
+            try std.testing.expectEqual(type, params[0].type.?);
+            try std.testing.expectEqual(std.Io, params[1].type.?);
+            try std.testing.expectEqual(std.mem.Allocator, params[2].type.?);
+            try std.testing.expectEqual(std.Io.Dir, params[3].type.?);
+            try std.testing.expectEqual([]const u8, params[4].type.?);
+        }
+        if (@hasDecl(module, "stringifyFile")) {
+            const params = @typeInfo(@TypeOf(module.stringifyFile)).@"fn".params;
+            try std.testing.expectEqual(@as(usize, 6), params.len);
+            try std.testing.expectEqual(std.Io, params[0].type.?);
+            try std.testing.expectEqual([]u8, params[1].type.?);
+            try std.testing.expectEqual(std.Io.Dir, params[2].type.?);
+            try std.testing.expectEqual([]const u8, params[3].type.?);
+        }
+    }
+}
