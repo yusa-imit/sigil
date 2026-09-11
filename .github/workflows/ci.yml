@@ -15,12 +15,17 @@ concurrency:
 
 jobs:
   # Native macOS runners could not link libSystem with Zig 0.15 on GitHub's images
-  # (undefined _abort/_malloc/...); now on 0.16.0 (see build.zig.zon), so tests run on
-  # Linux only pending re-verification (plan 001 item 8) — macOS/Windows are covered by
-  # cross-compilation below and by the local (macOS) autonomous sessions meanwhile.
+  # (undefined _abort/_malloc/...). Re-verified on 0.16.0 (plan 001 item 8): the link
+  # failure does not reproduce, so tests now run natively on both Linux and macOS.
+  # Windows has no native job (no GitHub-hosted Windows Zig cache precedent here yet) and
+  # stays covered by cross-compilation below.
   build-and-test:
-    name: Build & Test
-    runs-on: ubuntu-latest
+    name: Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v5
       - name: Install Zig
