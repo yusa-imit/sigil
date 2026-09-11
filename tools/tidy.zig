@@ -745,6 +745,103 @@ pub fn checkErrorCanceledProng(
     return out.toOwnedSlice(allocator);
 }
 
+const assertion_min: usize = 2;
+
+/// Running count for check 7 (`checkAssertionBaseline`): `checked` public
+/// functions seen under `src/core/**`/`src/reflect/**`, `met` of those with
+/// at least `assertion_min` assertions. Threaded through `lintLines` the
+/// same way `checkFunctionLength` threads `actual_out`, so the ratio is
+/// printable even when zero findings fire (today: 0/0, both dirs empty).
+const AssertionRatio = struct {
+    checked: usize = 0,
+    met: usize = 0,
+};
+
+/// Counts lines that open an `assert(` call, one line-oriented pass (same
+/// known limitation as `looksLikeStructField`: a string literal or a
+/// trailing `//` comment containing the exact text is still counted). Two
+/// guards keep the common false positives out: a full-line comment is
+/// skipped entirely, and the character before `assert(` must not be an
+/// identifier character, so `myassert(`/`try_assert(` do not match.
+fn countAssertions(lines: []const []const u8) usize {
+    var count: usize = 0;
+    for (lines) |line| {
+        const trimmed = std.mem.trimStart(u8, line, " \t");
+        if (std.mem.startsWith(u8, trimmed, "//")) continue;
+        const pos = std.mem.indexOf(u8, line, "assert(") orelse continue;
+        if (pos > 0 and isIdentChar(line[pos - 1])) continue;
+        count += 1;
+    }
+    return count;
+}
+
+/// True when `line`'s first non-whitespace token is `pub` — catches every
+/// public-declaration spelling (`pub fn`, `pub inline fn`, `pub export fn`)
+/// unlike a bare `"pub fn"` substring search, which misses the modifiered
+/// forms.
+fn isPublicFn(line: []const u8) bool {
+    return std.mem.startsWith(u8, std.mem.trimStart(u8, line, " \t"), "pub ");
+}
+
+/// Check 7: a public function under `src/core/**` or `src/reflect/**` with
+/// fewer than `assertion_min` `assert(` calls in its body is a WARNING
+/// (Tiger Style 1.1: "averaging at least two assertions per function").
+/// Scoped to these two Phase-1A directories only (not the top-level
+/// `src/core.zig`/`src/reflect.zig` stubs, which have no logic yet) so the
+/// rule is already in force the moment real modules land there, instead of
+/// being audited after the fact.
+pub fn checkAssertionBaseline(
+    allocator: Allocator,
+    path: []const u8,
+    lines: []const []const u8,
+    ratio: *AssertionRatio,
+) ![]Finding {
+    var out: std.ArrayList(Finding) = .empty;
+    errdefer out.deinit(allocator);
+    if (!underDir(path, "src/core") and !underDir(path, "src/reflect")) {
+        return out.toOwnedSlice(allocator);
+    }
+    var idx: usize = 0;
+    while (idx < lines.len) : (idx += 1) {
+        const name = extractFnName(lines[idx]) orelse continue;
+        if (!isPublicFn(lines[idx])) continue;
+        const span = measureFunctionLines(lines, idx) orelse continue;
+        std.debug.assert(span >= 1);
+        std.debug.assert(idx + span <= lines.len);
+        const count = countAssertions(lines[idx .. idx + span]);
+        ratio.checked += 1;
+        if (count >= assertion_min) {
+            ratio.met += 1;
+            continue;
+        }
+        try addFinding(&out, allocator, .{
+            .path = path,
+            .line = idx + 1,
+            .rule = "assertion-baseline",
+            .message = try std.fmt.allocPrint(
+                allocator,
+                "`{s}` has {d} assertion(s), Tiger Style wants at least {d}",
+                .{ name, count, assertion_min },
+            ),
+            .severity = .warn,
+        });
+    }
+    return out.toOwnedSlice(allocator);
+}
+
+/// Renders the running `AssertionRatio` as a one-line summary; printed
+/// alongside `formatFindings`'s report so `zig build tidy` always shows the
+/// ratio, even when it is the vacuous 0/0 of today's empty directories.
+fn formatAssertionRatio(allocator: Allocator, ratio: AssertionRatio) ![]u8 {
+    std.debug.assert(ratio.met <= ratio.checked);
+    return std.fmt.allocPrint(
+        allocator,
+        "tidy: assertion baseline {d}/{d} public function(s) in src/core/**, " ++
+            "src/reflect/** have >= {d} assertions\n",
+        .{ ratio.met, ratio.checked, assertion_min },
+    );
+}
+
 fn appendChecked(findings: *std.ArrayList(Finding), allocator: Allocator, items: []Finding) !void {
     defer allocator.free(items);
 
@@ -761,6 +858,7 @@ pub fn lintLines(
     baseline: Baseline,
     actual_out: *std.StringHashMap(ActualLen),
     findings: *std.ArrayList(Finding),
+    assertion_ratio: *AssertionRatio,
 ) !void {
     try appendChecked(findings, allocator, try checkLineLength(allocator, path, lines));
     try appendChecked(findings, allocator, try checkDocHeader(allocator, path, lines));
@@ -769,6 +867,8 @@ pub fn lintLines(
     try appendChecked(findings, allocator, try checkBanList(allocator, path, lines));
     try appendChecked(findings, allocator, try checkFileLength(allocator, path, lines));
     try appendChecked(findings, allocator, try checkErrorCanceledProng(allocator, path, lines));
+    const assertion_findings = try checkAssertionBaseline(allocator, path, lines, assertion_ratio);
+    try appendChecked(findings, allocator, assertion_findings);
 }
 
 /// Convenience wrapper over `lintLines` that splits raw file `content` first.
@@ -779,11 +879,12 @@ pub fn lintFile(
     baseline: Baseline,
     actual_out: *std.StringHashMap(ActualLen),
     findings: *std.ArrayList(Finding),
+    assertion_ratio: *AssertionRatio,
 ) !void {
     const lines = try splitLines(allocator, content);
     defer allocator.free(lines);
 
-    try lintLines(allocator, path, lines, baseline, actual_out, findings);
+    try lintLines(allocator, path, lines, baseline, actual_out, findings, assertion_ratio);
 }
 
 fn anyFailing(findings: []const Finding) bool {
@@ -942,14 +1043,17 @@ fn main15() !void {
 
     var findings: std.ArrayList(Finding) = .empty;
     var actual = std.StringHashMap(ActualLen).init(gpa);
+    var assertion_ratio: AssertionRatio = .{};
     for (paths) |p| {
         const content = root_dir.readFileAlloc(gpa, p, max_file_bytes) catch continue;
-        try lintFile(gpa, p, content, baseline, &actual, &findings);
+        try lintFile(gpa, p, content, baseline, &actual, &findings, &assertion_ratio);
     }
     try appendChecked(&findings, gpa, try reconcileBaseline(gpa, baseline, actual));
 
     const report = try formatFindings(gpa, findings.items);
     try std.fs.File.stdout().writeAll(report);
+    const ratio_line = try formatAssertionRatio(gpa, assertion_ratio);
+    try std.fs.File.stdout().writeAll(ratio_line);
     if (anyFailing(findings.items)) std.posix.exit(1);
 }
 
@@ -1070,14 +1174,17 @@ fn main16(init: std.process.Init) !void {
 
     var findings: std.ArrayList(Finding) = .empty;
     var actual = std.StringHashMap(ActualLen).init(gpa);
+    var assertion_ratio: AssertionRatio = .{};
     for (paths) |p| {
         const content = root_dir.readFileAlloc(io, p, gpa, .limited(max_file_bytes)) catch continue;
-        try lintFile(gpa, p, content, baseline, &actual, &findings);
+        try lintFile(gpa, p, content, baseline, &actual, &findings, &assertion_ratio);
     }
     try appendChecked(&findings, gpa, try reconcileBaseline(gpa, baseline, actual));
 
     const report = try formatFindings(gpa, findings.items);
     try std.Io.File.stdout().writeStreamingAll(io, report);
+    const ratio_line = try formatAssertionRatio(gpa, assertion_ratio);
+    try std.Io.File.stdout().writeStreamingAll(io, ratio_line);
     if (anyFailing(findings.items)) std.process.exit(1);
 }
 
@@ -1549,4 +1656,115 @@ test "checkErrorCanceledProng catches a self-contained one-line switch" {
     const findings = try checkErrorCanceledProng(gpa, "src/a.zig", &lines);
     defer freeFindings(gpa, findings);
     try std.testing.expectEqual(@as(usize, 1), findings.len);
+}
+
+test "checkAssertionBaseline warns on a pub fn with fewer than 2 assertions" {
+    const gpa = std.testing.allocator;
+    var ratio: AssertionRatio = .{};
+    const lines = [_][]const u8{
+        "pub fn f(x: u32) u32 {",
+        "    assert(x < 100);",
+        "    return x + 1;",
+        "}",
+    };
+
+    const findings = try checkAssertionBaseline(gpa, "src/core/value.zig", &lines, &ratio);
+    defer freeFindings(gpa, findings);
+    try std.testing.expectEqual(@as(usize, 1), findings.len);
+    try std.testing.expectEqual(Severity.warn, findings[0].severity);
+    try std.testing.expectEqual(@as(usize, 1), ratio.checked);
+    try std.testing.expectEqual(@as(usize, 0), ratio.met);
+}
+
+test "checkAssertionBaseline passes a pub fn with 2 or more assertions" {
+    const gpa = std.testing.allocator;
+    var ratio: AssertionRatio = .{};
+    const lines = [_][]const u8{
+        "pub fn f(x: u32) u32 {",
+        "    assert(x < 100);",
+        "    defer assert(x < 100);",
+        "    return x + 1;",
+        "}",
+    };
+
+    const findings = try checkAssertionBaseline(gpa, "src/reflect/parse.zig", &lines, &ratio);
+    defer freeFindings(gpa, findings);
+    try std.testing.expectEqual(@as(usize, 0), findings.len);
+    try std.testing.expectEqual(@as(usize, 1), ratio.checked);
+    try std.testing.expectEqual(@as(usize, 1), ratio.met);
+}
+
+test "checkAssertionBaseline ignores non-pub functions" {
+    const gpa = std.testing.allocator;
+    var ratio: AssertionRatio = .{};
+    const lines = [_][]const u8{
+        "fn helper() void {",
+        "    return;",
+        "}",
+    };
+
+    const findings = try checkAssertionBaseline(gpa, "src/core/value.zig", &lines, &ratio);
+    defer freeFindings(gpa, findings);
+    try std.testing.expectEqual(@as(usize, 0), findings.len);
+    try std.testing.expectEqual(@as(usize, 0), ratio.checked);
+}
+
+test "checkAssertionBaseline catches pub inline fn, not just pub fn" {
+    const gpa = std.testing.allocator;
+    var ratio: AssertionRatio = .{};
+    const lines = [_][]const u8{
+        "pub inline fn f() void {",
+        "    return;",
+        "}",
+    };
+
+    const findings = try checkAssertionBaseline(gpa, "src/core/value.zig", &lines, &ratio);
+    defer freeFindings(gpa, findings);
+    try std.testing.expectEqual(@as(usize, 1), findings.len);
+    try std.testing.expectEqual(@as(usize, 1), ratio.checked);
+}
+
+test "countAssertions ignores a full-line comment and an assert-suffixed identifier" {
+    const gpa = std.testing.allocator;
+    var ratio: AssertionRatio = .{};
+    const lines = [_][]const u8{
+        "pub fn f() void {",
+        "    // assert(true);",
+        "    myassert(true);",
+        "}",
+    };
+
+    const findings = try checkAssertionBaseline(gpa, "src/core/value.zig", &lines, &ratio);
+    defer freeFindings(gpa, findings);
+    try std.testing.expectEqual(@as(usize, 1), findings.len);
+    try std.testing.expect(std.mem.indexOf(u8, findings[0].message, "0 assertion(s)") != null);
+}
+
+test "checkAssertionBaseline is scoped to src/core/** and src/reflect/**" {
+    const gpa = std.testing.allocator;
+    var ratio: AssertionRatio = .{};
+    const lines = [_][]const u8{
+        "pub fn f() void {",
+        "    return;",
+        "}",
+    };
+
+    const findings = try checkAssertionBaseline(gpa, "src/json/scanner.zig", &lines, &ratio);
+    defer freeFindings(gpa, findings);
+    try std.testing.expectEqual(@as(usize, 0), findings.len);
+    try std.testing.expectEqual(@as(usize, 0), ratio.checked);
+
+    const top_level = try checkAssertionBaseline(gpa, "src/core.zig", &lines, &ratio);
+    defer freeFindings(gpa, top_level);
+    try std.testing.expectEqual(@as(usize, 0), top_level.len);
+    try std.testing.expectEqual(@as(usize, 0), ratio.checked);
+}
+
+test "formatAssertionRatio prints checked/met against the minimum" {
+    const gpa = std.testing.allocator;
+    const line = try formatAssertionRatio(gpa, .{ .checked = 3, .met = 1 });
+    defer gpa.free(line);
+    try std.testing.expect(std.mem.indexOf(u8, line, "1/3") != null);
+    try std.testing.expect(std.mem.indexOf(u8, line, "src/core/**") != null);
+    try std.testing.expect(std.mem.indexOf(u8, line, "src/reflect/**") != null);
 }
