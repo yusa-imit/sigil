@@ -9,6 +9,17 @@ const std = @import("std");
 
 pub const version = std.SemanticVersion{ .major = 0, .minor = 1, .patch = 0 };
 
+comptime {
+    // REALM.md's release quirk: 0.x means "nothing shippable yet" (Phase 1
+    // gates the first tag) — a major bump here is a deliberate release
+    // decision, never an accidental edit.
+    std.debug.assert(version.major == 0);
+    // Kingdom convention: no pre-release/build metadata suffixes on a plain
+    // semantic version.
+    std.debug.assert(version.pre == null);
+    std.debug.assert(version.build == null);
+}
+
 pub const core = @import("core.zig");
 pub const reflect = @import("reflect.zig");
 pub const json = @import("json.zig");
