@@ -201,6 +201,7 @@ fn isWireFormatPath(path: []const u8) bool {
         // proof: comptime block above guarantees both formats fit buf.
         const file_name = std.fmt.bufPrint(&buf, "src/{s}.zig", .{name}) catch unreachable;
         if (std.mem.eql(u8, path, file_name)) return true;
+        // proof: comptime block above guarantees both formats fit buf.
         const dir_prefix = std.fmt.bufPrint(&buf, "src/{s}/", .{name}) catch unreachable;
         if (std.mem.startsWith(u8, path, dir_prefix)) return true;
     }
@@ -1767,4 +1768,31 @@ test "formatAssertionRatio prints checked/met against the minimum" {
     try std.testing.expect(std.mem.indexOf(u8, line, "1/3") != null);
     try std.testing.expect(std.mem.indexOf(u8, line, "src/core/**") != null);
     try std.testing.expect(std.mem.indexOf(u8, line, "src/reflect/**") != null);
+}
+
+// Pins isWireFormatPath's real body against checkBanList's own rule: hasProof
+// only looks at the same or immediately previous line, so its two sequential
+// `catch unreachable` calls each need their own `// proof:` line, not one
+// shared comment above the first. Before this was fixed, the second call (the
+// `dir_prefix` line) had no proof of its own and checkBanList flagged it.
+test "isWireFormatPath's catch unreachable calls each carry their own proof comment" {
+    const gpa = std.testing.allocator;
+    const lines = [_][]const u8{
+        "fn isWireFormatPath(path: []const u8) bool {",
+        "    var buf: [wire_format_path_buf_len]u8 = undefined;",
+        "    for (wire_format_names) |name| {",
+        "        // proof: comptime block above guarantees both formats fit buf.",
+        "        const file_name = std.fmt.bufPrint(&buf, \"src/{s}.zig\", .{name}) catch unreachable;",
+        "        if (std.mem.eql(u8, path, file_name)) return true;",
+        "        // proof: comptime block above guarantees both formats fit buf.",
+        "        const dir_prefix = std.fmt.bufPrint(&buf, \"src/{s}/\", .{name}) catch unreachable;",
+        "        if (std.mem.startsWith(u8, path, dir_prefix)) return true;",
+        "    }",
+        "    return false;",
+        "}",
+    };
+
+    const findings = try checkBanList(gpa, "tools/tidy.zig", &lines);
+    defer freeFindings(gpa, findings);
+    try std.testing.expectEqual(@as(usize, 0), findings.len);
 }
