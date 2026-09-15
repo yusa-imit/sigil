@@ -1,0 +1,5 @@
+# Tiger Style tidy ratchet: functions already over 70 lines, one per line as
+# `path:function_name:lines`. May only shrink — see tools/tidy.zig doc header
+# and citadel/core/rules/tiger-style.md §5.
+#
+# Empty today: sigil is still at the stub stage, no function exceeds 70 lines.
