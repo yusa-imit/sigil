@@ -6,8 +6,14 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
-Nothing yet — plan 002 (Phase 1A: `core/{value,tree,diagnostics}.zig`) starts the first real
-implementation work.
+Plan 002 (Phase 1A: `core/{value,tree,diagnostics}.zig`) starts the first real implementation
+work.
+
+### Fixed
+
+- `tools/tidy.zig`: moved `tidy_baseline.txt` from the repo root to `tools/` — the root was
+  outside `citadel/protocol/DOCS.md`'s allowed file list. `--baseline`'s default now points at
+  `./tools/tidy_baseline.txt`; no behavior change for `zig build tidy`.
 
 ## [0.2.0] — 2026-09-12
 
