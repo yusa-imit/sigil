@@ -938,6 +938,13 @@ fn shouldCollectFile(name: []const u8) bool {
 
 const scan_roots = [_][]const u8{ "src", "bench", "tests" };
 
+/// Directory-walk nesting bound: `walkDir15`/`descendDir15` and their 0.16
+/// counterparts are mutually recursive with no explicit stack, so a
+/// pathologically deep or symlink-cyclic tree would otherwise recurse without
+/// limit. A repo tree this deep is operating error (bad input), not caller
+/// error, so it is a returned `error.NestingTooDeep`, never an assert.
+const dir_depth_max: usize = 64;
+
 // ---------------------------------------------------------------------------
 // Zig 0.15.2 filesystem glue (std.fs). Never referenced when compiling under
 // 0.16 — see the comptime-pruned `pub const main` at the bottom of the file.
@@ -945,18 +952,25 @@ const scan_roots = [_][]const u8{ "src", "bench", "tests" };
 
 // Mutual recursion defeats Zig's inferred error set, so these two use
 // `anyerror` explicitly. Not `pub fn`, so the kingdom's `anyerror` ban (which
-// only fires on a public fn) does not apply.
+// only fires on a public fn) does not apply. Unlike `walkDir16` below, this
+// stays hand-rolled recursion rather than std's walker: 0.15.2's
+// `std.fs.Dir.Walker` has no `SelectiveWalker`/opt-in `enter`, so it cannot
+// support `shouldSkipDirName` without already having descended. `depth`
+// bounds the recursion regardless (see `dir_depth_max`); this path is dead
+// code under the current 0.16-only toolchain (never analyzed, never tested —
+// see the file header), so it is kept structurally consistent, not verified.
 fn walkDir15(
     allocator: Allocator,
     dir: std.fs.Dir,
     prefix: []const u8,
     out: *std.ArrayList([]const u8),
+    depth: usize,
 ) anyerror!void {
     var it = dir.iterate();
     while (try it.next()) |entry| {
         if (entry.kind == .directory and shouldSkipDirName(entry.name)) continue;
         switch (entry.kind) {
-            .directory => try descendDir15(allocator, dir, prefix, entry.name, out),
+            .directory => try descendDir15(allocator, dir, prefix, entry.name, out, depth),
             .file => try maybeAddFile(allocator, prefix, entry.name, out),
             else => {},
         }
@@ -969,12 +983,15 @@ fn descendDir15(
     prefix: []const u8,
     name: []const u8,
     out: *std.ArrayList([]const u8),
+    depth: usize,
 ) anyerror!void {
+    if (depth >= dir_depth_max) return error.NestingTooDeep;
+
     var sub = try parent.openDir(name, .{ .iterate = true });
     defer sub.close();
 
     const new_prefix = try std.fmt.allocPrint(allocator, "{s}{s}/", .{ prefix, name });
-    try walkDir15(allocator, sub, new_prefix, out);
+    try walkDir15(allocator, sub, new_prefix, out, depth + 1);
 }
 
 fn maybeAddFile(
@@ -1008,7 +1025,7 @@ fn collectSubtree15(
     defer dir.close();
 
     const prefix = try std.fmt.allocPrint(allocator, "{s}/", .{name});
-    try walkDir15(allocator, dir, prefix, out);
+    try walkDir15(allocator, dir, prefix, out, 0);
 }
 
 fn collectFiles15(allocator: Allocator, root: std.fs.Dir) ![][]const u8 {
@@ -1063,9 +1080,17 @@ fn main15() !void {
 // when compiling under 0.15.2.
 // ---------------------------------------------------------------------------
 
-// Mutual recursion defeats Zig's inferred error set, so these two use
-// `anyerror` explicitly. Not `pub fn`, so the kingdom's `anyerror` ban (which
-// only fires on a public fn) does not apply.
+// Not `pub fn`, so the kingdom's `anyerror` ban (which only fires on a
+// public fn) does not apply. `anyerror` is kept for symmetry with the 0.15
+// glue below and because `SelectiveWalker.Error` is itself a union of
+// `Iterator.Error` and `Allocator.Error`, neither of which this repo names.
+//
+// Uses `std.Io.Dir.walkSelectively` (an explicit stack owned by std, not
+// hand-rolled recursion) so the depth bound can be enforced by refusing to
+// `enter` a directory past `dir_depth_max`, rather than by threading a depth
+// counter through mutually-recursive functions. A repo tree this deep is
+// operating error (bad input), not caller error, hence a returned
+// `error.NestingTooDeep`, never an assert.
 fn walkDir16(
     allocator: Allocator,
     io: std.Io,
@@ -1073,30 +1098,17 @@ fn walkDir16(
     prefix: []const u8,
     out: *std.ArrayList([]const u8),
 ) anyerror!void {
-    var it = dir.iterate();
-    while (try it.next(io)) |entry| {
-        if (entry.kind == .directory and shouldSkipDirName(entry.name)) continue;
-        switch (entry.kind) {
-            .directory => try descendDir16(allocator, io, dir, prefix, entry.name, out),
-            .file => try maybeAddFile(allocator, prefix, entry.name, out),
-            else => {},
+    var walker = try dir.walkSelectively(allocator);
+    defer walker.deinit();
+    while (try walker.next(io)) |entry| {
+        if (entry.kind != .directory) {
+            try maybeAddFile(allocator, prefix, entry.path, out);
+            continue;
         }
+        if (shouldSkipDirName(entry.basename)) continue;
+        if (entry.depth() > dir_depth_max) return error.NestingTooDeep;
+        try walker.enter(io, entry);
     }
-}
-
-fn descendDir16(
-    allocator: Allocator,
-    io: std.Io,
-    parent: std.Io.Dir,
-    prefix: []const u8,
-    name: []const u8,
-    out: *std.ArrayList([]const u8),
-) anyerror!void {
-    var sub = try parent.openDir(io, name, .{ .iterate = true });
-    defer sub.close(io);
-
-    const new_prefix = try std.fmt.allocPrint(allocator, "{s}{s}/", .{ prefix, name });
-    try walkDir16(allocator, io, sub, new_prefix, out);
 }
 
 fn collectTopLevel16(
@@ -1795,4 +1807,36 @@ test "isWireFormatPath's catch unreachable calls each carry their own proof comm
     const findings = try checkBanList(gpa, "tools/tidy.zig", &lines);
     defer freeFindings(gpa, findings);
     try std.testing.expectEqual(@as(usize, 0), findings.len);
+}
+
+// walkDir16/descendDir16 were mutually recursive with no depth bound, violating
+// Tiger Style's "no unbounded recursion" rule (a pathologically deep or symlink-cyclic
+// tree would otherwise walk without limit). A real 0.16 filesystem test, not
+// a unit test against a pure function, because the bug is in the walk itself.
+test "walkDir16 rejects a directory tree deeper than dir_depth_max" {
+    if (!zig16) return error.SkipZigTest;
+    const io = std.testing.io;
+
+    // walkDir16 allocates transient path fragments (via maybeAddFile) it
+    // never frees individually (real callers use an arena, per main16);
+    // mirror that here so the leak checker isn't flagging this test's own
+    // allocator use.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const gpa = arena.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var path: std.ArrayList(u8) = .empty;
+    var depth: usize = 0;
+    while (depth <= dir_depth_max) : (depth += 1) {
+        if (depth > 0) try path.append(gpa, '/');
+        try path.appendSlice(gpa, "d");
+    }
+    try tmp.dir.createDirPath(io, path.items);
+
+    var out: std.ArrayList([]const u8) = .empty;
+    const result = walkDir16(gpa, io, tmp.dir, "", &out);
+    try std.testing.expectError(error.NestingTooDeep, result);
 }

@@ -14,6 +14,13 @@ work.
 - `tools/tidy.zig`: moved `tidy_baseline.txt` from the repo root to `tools/` — the root was
   outside `citadel/protocol/DOCS.md`'s allowed file list. `--baseline`'s default now points at
   `./tools/tidy_baseline.txt`; no behavior change for `zig build tidy`.
+- `tools/tidy.zig`: the 0.16 directory walk (`walkDir16`) was unbounded mutual recursion — a
+  pathologically deep or symlink-cyclic tree would recurse without limit. Rewritten on
+  `std.Io.Dir.walkSelectively` (an explicit stack owned by std, not hand-rolled recursion),
+  refusing to descend past `dir_depth_max` (64) with a returned `error.NestingTooDeep`. The
+  dead-code 0.15 glue (`walkDir15`/`descendDir15`, unreachable under the current 0.16-only
+  toolchain) keeps hand-rolled recursion, now depth-bounded the same way, since 0.15.2's walker
+  has no opt-in per-directory descent to mirror the rewrite.
 
 ## [0.2.0] — 2026-09-12
 
