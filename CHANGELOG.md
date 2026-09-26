@@ -9,6 +9,12 @@ All notable changes to this project are documented in this file. The format foll
 Plan 002 (Phase 1A: `core/{value,tree,diagnostics}.zig`) starts the first real implementation
 work.
 
+### Added
+
+- `core/value.zig`: the `Value` union, `Timestamp`, an insertion-ordered `Map` over a
+  caller-supplied entry buffer (`put` returns `DuplicateKey`/`OutOfSpace`), and a structural
+  `eql` with an explicit bounded stack (`nesting_max` = 128). Re-exported from `sigil.core`.
+
 ### Fixed
 
 - `tools/tidy.zig`: moved `tidy_baseline.txt` from the repo root to `tools/` — the root was

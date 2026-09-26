@@ -17,7 +17,7 @@ real functions exist) finally has something to measure.
 
 ## Scope
 
-- [ ] **`core/value.zig` — the `Value` union.** `null | bool | int: i64 | uint: u64 |
+- [x] **`core/value.zig` — the `Value` union.** `null | bool | int: i64 | uint: u64 |
       float: f64 | string: []const u8 | bytes: []const u8 | timestamp: Timestamp | array:
       []Value | map: Map` per PRD §4.1. `Map` preserves insertion order (TOML/YAML round-trip
       requirement, `REALM.md`). No allocation in this file — `Value` itself is a plain union;
