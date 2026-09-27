@@ -23,7 +23,7 @@ real functions exist) finally has something to measure.
       requirement, `REALM.md`). No allocation in this file — `Value` itself is a plain union;
       `ValueTree` below owns memory. Tests: construction of every variant, `std.meta` exhaustive
       switch coverage, `Map` insertion-order preserved through get/put/iterate.
-- [ ] **`core/tree.zig` — `ValueTree`.** `ValueTree{arena: std.heap.ArenaAllocator, root:
+- [x] **`core/tree.zig` — `ValueTree`.** `ValueTree{arena: std.heap.ArenaAllocator, root:
       Value}`, `init`/`deinit` (single `arena.deinit()` frees the whole tree), a `dupe`-style
       builder API for tests to construct trees without hand-rolling arena calls. Doc-comment the
       ownership contract at every function returning a `Value` or slice tied to the tree's

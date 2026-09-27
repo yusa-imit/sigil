@@ -14,6 +14,8 @@ work.
 - `core/value.zig`: the `Value` union, `Timestamp`, an insertion-ordered `Map` over a
   caller-supplied entry buffer (`put` returns `DuplicateKey`/`OutOfSpace`), and a structural
   `eql` with an explicit bounded stack (`nesting_max` = 128). Re-exported from `sigil.core`.
+- `core/tree.zig`: `ValueTree`, the arena that owns a document's strings, bytes, arrays and
+  map buffers, with `dupe_string`/`dupe_bytes`/`dupe_array`/`new_map`/`dupe_key` builders.
 
 ### Fixed
 
