@@ -31,7 +31,7 @@ real functions exist) finally has something to measure.
       `std.testing.allocator` wrapping the arena's backing allocator; a tree built then `deinit`d
       is safe to drop (no double-free, no use-after-free caught by a `GeneralPurposeAllocator`
       safety build).
-- [ ] **`core/diagnostics.zig` — `Diagnostics`.** `{line: u32, col: u32, message: []const u8,
+- [x] **`core/diagnostics.zig` — `Diagnostics`.** `{line: u32, col: u32, message: []const u8,
       snippet: ?[]const u8}`, a `limits: struct { message_len_max: u32, snippet_len_max: u32 }`
       to bound the two slices (Tiger Style §1.7 "a limit on everything"), and a formatter
       (`format(self, w: *std.Io.Writer) !void`) that renders `line:col: message`. Tests: a
