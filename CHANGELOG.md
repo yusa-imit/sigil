@@ -16,6 +16,10 @@ work.
   `eql` with an explicit bounded stack (`nesting_max` = 128). Re-exported from `sigil.core`.
 - `core/tree.zig`: `ValueTree`, the arena that owns a document's strings, bytes, arrays and
   map buffers, with `dupe_string`/`dupe_bytes`/`dupe_array`/`new_map`/`dupe_key` builders.
+- `core/diagnostics.zig`: `Diagnostics{line, col, message, snippet}`, the position-carrying
+  parse failure report every format module fills. `DiagnosticsType(comptime limits: Limits)`
+  sizes fixed inline buffers at comptime (no allocation); input over a limit is truncated to
+  exactly that limit with a `truncation_marker` appended, never silently dropped.
 
 ### Fixed
 
