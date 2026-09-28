@@ -37,13 +37,18 @@ real functions exist) finally has something to measure.
       (`format(self, w: *std.Io.Writer) !void`) that renders `line:col: message`. Tests: a
       message/snippet longer than the limit is truncated with an explicit marker, never silently
       dropped or overflowed; formatter output for a representative diagnostic.
-- [ ] **`core/number.zig` — i64/u64/f64 boundary handling (Phase 1B, folded in).** Exact-integer
-      preservation rules from `REALM.md` ("no silent int -> float coercion"): a `Number`
-      wrapper or free functions deciding int-vs-uint-vs-float representation from source text
-      shape (a `TOML`/`JSON` lexer's job upstream; this module only holds the decision logic and
-      overflow errors). Tests: `i64::MAX`/`MIN`, `u64::MAX`, `-0` distinct from `0`, an
-      integer literal one past `i64::MAX` returns a typed overflow error rather than silently
-      becoming a float.
+- [x] **`core/number.zig` — i64/u64/f64 boundary handling (Phase 1B, folded in).** Exact-integer
+      preservation rules from `REALM.md` ("no silent int -> float coercion"): free functions
+      (`is_decimal_literal`, `classify`, `parse_integer`, `parse_float`, `parse_decimal`)
+      deciding int-vs-uint-vs-float representation from source text shape (a `TOML`/`JSON`
+      lexer's job upstream; this module only holds the decision logic and overflow errors).
+      Tests: `i64::MAX`/`MIN`, `u64::MAX`, `-0` distinct from `0` (float bit pattern only —
+      integer `-0` and `0` are both the signless `.int = 0`, since `i64` has no negative zero).
+      **Correction to this bullet's original wording** (architect design pass, cycle 23): a
+      literal one past `i64::MAX` is not an overflow — it is lossless in `u64`, so it becomes
+      `.uint`, never a silently-coerced float. The typed `IntegerAboveMax`/`IntegerBelowMin`
+      overflow errors instead trigger past `u64::MAX` (positive) and past `i64::MIN` (negative),
+      the only ranges with no exact integer representation left.
 - [ ] **Wire into `root.zig` and `tidy`.** Replace `core.zig`'s stub body with re-exports of
       `core/{value,tree,diagnostics,number}.zig`; confirm the existing `wire_usize` and
       assertion-baseline `tidy` checks now scan real code (both were 0/0 findings against stub
