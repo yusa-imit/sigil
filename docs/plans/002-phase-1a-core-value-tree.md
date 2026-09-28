@@ -49,7 +49,7 @@ real functions exist) finally has something to measure.
       `.uint`, never a silently-coerced float. The typed `IntegerAboveMax`/`IntegerBelowMin`
       overflow errors instead trigger past `u64::MAX` (positive) and past `i64::MIN` (negative),
       the only ranges with no exact integer representation left.
-- [ ] **Wire into `root.zig` and `tidy`.** Replace `core.zig`'s stub body with re-exports of
+- [x] **Wire into `root.zig` and `tidy`.** Replace `core.zig`'s stub body with re-exports of
       `core/{value,tree,diagnostics,number}.zig`; confirm the existing `wire_usize` and
       assertion-baseline `tidy` checks now scan real code (both were 0/0 findings against stub
       files; this item is done when the assertion-baseline count is nonzero and still green).

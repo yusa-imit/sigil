@@ -33,6 +33,7 @@ fn digit_run_len(s: []const u8) usize {
 pub fn is_decimal_literal(text: []const u8) bool {
     var i: usize = 0;
     if (text.len > 0 and text[0] == '-') i += 1;
+    assert(i <= text.len);
 
     const integer_digits = digit_run_len(text[i..]);
     if (integer_digits == 0) return false;
@@ -53,6 +54,7 @@ pub fn is_decimal_literal(text: []const u8) bool {
         i += exponent_digits;
     }
 
+    assert(i <= text.len);
     return i == text.len;
 }
 
