@@ -1,8 +1,8 @@
 //! sigil.core — Value union, arena-owned ValueTree, Number parsing/formatting, Timestamp,
 //! Diagnostics (line:col), UTF-8/escape utils.
 //!
-//! Status: `value`, `tree`, and `diagnostics` have landed (plan 002 items 1-3); the
-//! remaining files are added as PRD phases land (see docs/PRD.md and docs/plans/).
+//! Status: `value`, `tree`, `diagnostics`, and `number` have landed (plan 002 items 1-4);
+//! the remaining files are added as PRD phases land (see docs/PRD.md and docs/plans/).
 
 const std = @import("std");
 
@@ -15,6 +15,7 @@ pub const ValueTree = tree.ValueTree;
 pub const diagnostics = @import("core/diagnostics.zig");
 pub const Diagnostics = diagnostics.Diagnostics;
 pub const DiagnosticsType = diagnostics.DiagnosticsType;
+pub const number = @import("core/number.zig");
 
 /// Module-level error set. Extend as functionality lands; keep names descriptive
 /// (`error.ChecksumMismatch`, not `error.Invalid`).

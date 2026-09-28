@@ -20,6 +20,12 @@ work.
   parse failure report every format module fills. `DiagnosticsType(comptime limits: Limits)`
   sizes fixed inline buffers at comptime (no allocation); input over a limit is truncated to
   exactly that limit with a `truncation_marker` appended, never silently dropped.
+- `core/number.zig`: decimal literal text -> `Value` (`.int`/`.uint`/`.float`), exact, no
+  silent int -> float coercion. `is_decimal_literal`/`classify` gate the grammar;
+  `parse_integer` prefers `.int`, widens to `.uint` only past `maxInt(i64)`, and returns a
+  typed `IntegerAboveMax`/`IntegerBelowMin` error only past `maxInt(u64)`/`minInt(i64)`;
+  `parse_float` returns `FloatOutOfRange` on a finite literal that rounds to infinity, never a
+  silent `inf`. Re-exported from `sigil.core`.
 
 ### Fixed
 
