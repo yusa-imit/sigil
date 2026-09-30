@@ -30,6 +30,11 @@ work.
   the byte offset and reason (`overlong`, `surrogate`, `above_max`, `truncated`,
   `stray_continuation`) of the first bad sequence; input over `maxInt(u32)` bytes is
   `InputTooLarge`. Re-exported from `sigil.core`.
+- `core/unicode_escape.zig`: the format-agnostic escape primitives. `encode` (codepoint ->
+  UTF-8, surrogates and > U+10FFFF are `InvalidCodepoint`), `parse_hex4` (`\uXXXX` digits),
+  `decode_utf16` (surrogate-pair combining; a lone surrogate is `LoneSurrogate`, never U+FFFD),
+  and `write_escaped` (`"`, `\\`, control escapes, and `\uXXXX` under the `ascii_only` policy;
+  invalid UTF-8 is refused before anything is written). Re-exported from `sigil.core`.
 
 ### Fixed
 

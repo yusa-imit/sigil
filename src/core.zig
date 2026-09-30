@@ -17,6 +17,7 @@ pub const Diagnostics = diagnostics.Diagnostics;
 pub const DiagnosticsType = diagnostics.DiagnosticsType;
 pub const number = @import("core/number.zig");
 pub const unicode = @import("core/unicode.zig");
+pub const unicode_escape = @import("core/unicode_escape.zig");
 
 /// Module-level error set. Extend as functionality lands; keep names descriptive
 /// (`error.ChecksumMismatch`, not `error.Invalid`).
