@@ -32,7 +32,7 @@ consumer in `REALM.md` loads configs into structs), and Phase 2D reuses its opti
       YAML escape differently, so each format keeps its own table. Tests: surrogate edges
       (D7FF, D800, DBFF+DC00, DFFF, E000), `encode` then validate for all 0x110000 codepoints
       (bounded loop), writer output per policy.
-- [ ] **ADR 0002 — reflect contract (design only, `architect`).** Pins the one-way doors
+- [x] **ADR 0002 — reflect contract (design only, `architect`).** Pins the one-way doors
       before code: (a) hooks take `*ValueTree`, not a bare allocator, so hook results share the
       tree lifetime; `sigilStringify` returns a `Value` instead of writing bytes, since reflect
       never sees a writer; (b) `Value` has no source positions, so reflect errors put the key
@@ -64,9 +64,9 @@ consumer in `REALM.md` loads configs into structs), and Phase 2D reuses its opti
       `std.StringHashMap`, which stores its allocator and loses order, breaking round-trip; the
       ADR records the swap); `sigilParse` dispatched when `T` declares it. Tests: each union
       variant, unknown tag, hook wins over the default mapping.
-- [ ] **`reflect/stringify.zig`.** `stringify(comptime T, tree: *ValueTree, value: T)
-      Error!Value`, the mirror of parse for every type above, honoring options and
-      `sigilStringify`. `[]const u8` becomes `.string` only if valid UTF-8, else `InvalidUtf8`
+- [ ] **`reflect/stringify.zig`.** `stringify(comptime T, tree: *ValueTree, value: T,
+      diag: *Diagnostics) StringifyError!Value` (ADR 0002), the mirror of parse for every type above,
+      honoring options and `sigilStringify`. `[]const u8` becomes `.string` only if valid UTF-8, else `InvalidUtf8`
       (never a silent `.bytes`); unsigned values above `maxInt(i64)` become `.uint`, all others
       `.int`, matching `number.parse_integer` so round-trips stay `eql`. Tests: per type,
       expected `Value` compared with `core.value.eql`.

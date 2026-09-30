@@ -77,17 +77,42 @@ const Config = struct {
     pub const sigil_options = .{
         .rename = .{ .name = "server_name" },
         .rename_all = .snake_case,
-        .deny_unknown_fields = true,
+        .deny_unknown_fields = true,   // 생략 시 기본값도 true
     };
 };
+// reflect 계층: Value <-> T. 결과는 트리 수명에 묶임
+const cfg = try sigil.reflect.parse(Config, &tree, tree.root, &diag);
+const value = try sigil.reflect.stringify(Config, &tree, cfg, &diag);
+// 포맷 계층(Phase 2): 바이트 -> ValueTree -> reflect.parse
 var tree = try sigil.toml.parse(Config, allocator, src, &diag);   // ValueTree 소유
 const cfg: Config = tree.value;
 const out = try sigil.json.stringify(allocator, cfg, .{ .pretty = true });
 ```
 
-- 지원: 정수/부동/bool/[]const u8/옵셔널/배열/슬라이스/구조체/enum(문자열)/tagged union/`std.StringHashMap`
-- 기본값: 구조체 기본값 존중, 누락 필드는 `error.MissingField` + Diagnostics
-- 커스텀: `pub fn sigilParse(allocator, Value, *Diagnostics) !T`, `pub fn sigilStringify(self, *Writer) !void`
+계약 전체는 `docs/adr/0002-reflect-contract.md`. 이 절은 요약이다.
+
+- 지원: bool / 정수(64비트 이하) / f32·f64 / `[]const u8`(`.string`, 트리에서 빌림) / `?T` /
+  `[N]T` / `[]T`(트리 아레나에서 정확한 길이로 1회 할당) / 구조체 / enum(문자열) /
+  tagged union / `std.array_hash_map.String(V)`(순서 보존, 1회 크기 지정.
+  `std.StringHashMap`은 할당자를 저장하고 순서를 잃어 제외) / `core.Timestamp` / `core.Value`
+- 미지원은 `@compileError`: 슬라이스 외 포인터, `[]u8`, 센티널 슬라이스, packed struct, 튜플,
+  comptime 필드, untagged union, non-exhaustive enum, `??T` 등
+- 기본값: 구조체 기본값만이 유일한 출처. 기본값 없는 누락 필드는 `?T`라도
+  `error.MissingField`. 명시적 `null`은 `?T`에만 허용
+- tagged union: 외부 태그. void 변형은 `"tag"`, 페이로드 변형은 키 하나짜리 맵
+  `{ tag: payload }`
+- 숫자: int -> float은 |n| <= 2^53(f32는 2^24)일 때만, 아니면 `InexactNumber`. float -> int는
+  항상 `TypeMismatch`. 축소 범위 초과는 `IntegerOutOfRange`. stringify는 `maxInt(i64)` 이하를
+  `.int`, 초과를 `.uint`로 (`number.parse_integer`와 동일)
+- 에러: `ParseError`(11종), `StringifyError`(`InvalidUtf8`, `InputTooLarge`, `TooDeep`,
+  `OutOfMemory`). 깊이는 `core.value.nesting_max`(128), 초과 시 `TooDeep`
+- 진단: Value에는 위치가 없으므로 `line = col = 0`("경로만")이고, 메시지는
+  `servers[2].host: 이유` 형식. 긴 경로는 앞부분을 `...`로 생략하고 이유는 보존.
+  Phase 2 포맷 계층이 경로를 재탐색해 line:col로 승격
+- 커스텀: `pub fn sigilParse(context: *reflect.Context, value: Value) reflect.ParseError!T`,
+  `pub fn sigilStringify(self: *const T, context: *reflect.Context)
+  reflect.StringifyError!Value`. 훅은 쌍으로만 선언하고, 할당은 `context.tree`에서만 하며,
+  실패 시 `context.fail`로 diag를 채움
 
 ### 4.3 포맷별 요구
 
