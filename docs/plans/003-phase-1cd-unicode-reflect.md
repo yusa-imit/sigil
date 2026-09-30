@@ -24,13 +24,14 @@ consumer in `REALM.md` loads configs into structs), and Phase 2D reuses its opti
       input is `error.InputTooLarge` (it is data, not a contract). Tests: every boundary of
       Unicode Table 3-7, plus a `std.testing.fuzz` differential test against
       `std.unicode.utf8ValidateSlice` whose seed corpus runs in `zig build test`.
-- [ ] **`core/unicode.zig` — escape primitives.** Format-agnostic parts only: `encode` a
+- [x] **`core/unicode.zig` — escape primitives.** Format-agnostic parts only: `encode` a
       codepoint into `*[4]u8`, `parse_hex4` plus surrogate-pair combining for `\uXXXX\uXXXX`
       (a lone surrogate is a typed error, never a silent U+FFFD), and `write_escaped(w:
-      *std.Io.Writer, text, policy)`. Why no escape tables: JSON, TOML and YAML escape
-      differently, so each format keeps its own table. Tests: surrogate edges (D7FF, D800,
-      DBFF+DC00, DFFF, E000), `encode` then validate for all 0x110000 codepoints (bounded
-      loop), writer output per policy.
+      *std.Io.Writer, text, policy)`. They live in `core/unicode_escape.zig`, split out to
+      keep `unicode.zig` under the 800-line soft limit. Why no escape tables: JSON, TOML and
+      YAML escape differently, so each format keeps its own table. Tests: surrogate edges
+      (D7FF, D800, DBFF+DC00, DFFF, E000), `encode` then validate for all 0x110000 codepoints
+      (bounded loop), writer output per policy.
 - [ ] **ADR 0002 — reflect contract (design only, `architect`).** Pins the one-way doors
       before code: (a) hooks take `*ValueTree`, not a bare allocator, so hook results share the
       tree lifetime; `sigilStringify` returns a `Value` instead of writing bytes, since reflect
