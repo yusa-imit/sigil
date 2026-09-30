@@ -18,7 +18,7 @@ consumer in `REALM.md` loads configs into structs), and Phase 2D reuses its opti
 
 ## Scope
 
-- [ ] **`core/unicode.zig` — UTF-8 validation.** `find_invalid(bytes) ?Invalid` returns the
+- [x] **`core/unicode.zig` — UTF-8 validation.** `find_invalid(bytes) ?Invalid` returns the
       byte offset and reason (overlong, surrogate, above U+10FFFF, truncated, stray
       continuation) so a parser can fill `Diagnostics.col`; the offset is `u32`, so a longer
       input is `error.InputTooLarge` (it is data, not a contract). Tests: every boundary of

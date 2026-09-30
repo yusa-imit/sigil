@@ -26,6 +26,10 @@ work.
   typed `IntegerAboveMax`/`IntegerBelowMin` error only past `maxInt(u64)`/`minInt(i64)`;
   `parse_float` returns `FloatOutOfRange` on a finite literal that rounds to infinity, never a
   silent `inf`. Re-exported from `sigil.core`.
+- `core/unicode.zig`: strict UTF-8 validation (`find_invalid`) per Unicode Table 3-7, reporting
+  the byte offset and reason (`overlong`, `surrogate`, `above_max`, `truncated`,
+  `stray_continuation`) of the first bad sequence; input over `maxInt(u32)` bytes is
+  `InputTooLarge`. Re-exported from `sigil.core`.
 
 ### Fixed
 
