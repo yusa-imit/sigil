@@ -48,6 +48,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_exe_tests.step);
 
     addTidyStep(b, test_step);
+    addCompileErrorTests(b, test_step, mod, target);
 
     // Benchmarks
     const bench = b.addExecutable(.{
@@ -74,6 +75,67 @@ pub fn build(b: *std.Build) void {
     });
     const docs_step = b.step("docs", "Generate API documentation");
     docs_step.dependOn(&docs.step);
+}
+
+/// A fixture under `tests/compile_errors/` and the message the compiler must reject it with.
+const CompileErrorCase = struct { file: []const u8, message: []const u8 };
+
+const compile_error_cases = [_]CompileErrorCase{
+    .{
+        .file = "unknown_option",
+        .message = "unknown option .renmae (expected rename, rename_all or deny_unknown_fields)",
+    },
+    .{
+        .file = "rename_missing_field",
+        .message = "rename of .nmae, which is not a field or tag of the type",
+    },
+    .{ .file = "wire_name_collision", .message = "both land on the wire name \"x\"" },
+    .{ .file = "rename_all_collision", .message = "both land on the wire name \"max-size\"" },
+    .{ .file = "deny_on_enum", .message = "deny_unknown_fields applies to structs only" },
+    .{ .file = "options_with_hooks", .message = "the options would be dead; remove one" },
+    .{ .file = "rename_all_needs_snake_name", .message = "is not one; give it an explicit rename" },
+    .{
+        .file = "rename_all_unknown_style",
+        .message = "is not one of snake_case, camel_case, pascal_case, kebab_case, " ++
+            "screaming_snake_case",
+    },
+    .{ .file = "deny_not_bool", .message = "deny_unknown_fields must be a bool" },
+    .{ .file = "rename_not_string", .message = "rename values must be string literals" },
+    .{ .file = "rename_empty", .message = "rename of .name is empty" },
+    .{
+        .file = "rename_all_not_literal",
+        .message = "rename_all must be an enum literal such as .kebab_case",
+    },
+    .{ .file = "rename_not_struct", .message = "rename must be an anonymous struct" },
+    .{ .file = "options_not_struct", .message = "sigil_options must be an anonymous struct" },
+    .{
+        .file = "options_with_stringify_hook",
+        .message = "the options would be dead; remove one",
+    },
+    .{ .file = "untagged_union", .message = "is unsupported" },
+    .{ .file = "unsupported_type", .message = "is not a struct, enum or tagged union" },
+};
+
+/// Compiles each `tests/compile_errors/<file>.zig` and passes only if the compiler rejects it
+/// with the expected message, so a `@compileError` in `reflect` cannot silently stop firing.
+fn addCompileErrorTests(
+    b: *std.Build,
+    test_step: *std.Build.Step,
+    mod: *std.Build.Module,
+    target: std.Build.ResolvedTarget,
+) void {
+    for (compile_error_cases) |case| {
+        const fixture = b.addObject(.{
+            .name = case.file,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(b.fmt("tests/compile_errors/{s}.zig", .{case.file})),
+                .target = target,
+                .imports = &.{.{ .name = "sigil", .module = mod }},
+            }),
+        });
+        fixture.expect_errors = .{ .contains = case.message };
+        test_step.dependOn(&fixture.step);
+    }
 }
 
 /// Wires the Tiger Style lint (`tools/tidy.zig`): its own unit tests and the real repo-wide

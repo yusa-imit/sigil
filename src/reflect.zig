@@ -1,15 +1,15 @@
 //! sigil.reflect — comptime struct ↔ Value mapping: parse(T), stringify(T), field options
 //! (rename, defaults, deny_unknown), custom hooks, Schema(T) validation.
 //!
-//! Planned files (see docs/PRD.md):
-//!   - `reflect/parse.zig`
-//!   - `reflect/stringify.zig`
-//!   - `reflect/options.zig`
-//!   - `reflect/schema.zig`
+//! Files (see docs/PRD.md and docs/adr/0002-reflect-contract.md):
+//!   - `reflect/options.zig` — landed: `sigil_options` resolved at comptime into a field table
+//!   - `reflect/parse.zig`, `reflect/stringify.zig`, `reflect/schema.zig` — planned
 //!
-//! Status: stub. Public declarations are added as PRD phases land.
+//! Status: partial. Public declarations are added as plan 003 items land.
 
 const std = @import("std");
+
+pub const options = @import("reflect/options.zig");
 
 /// Module-level error set. Extend as functionality lands; keep names descriptive
 /// (`error.ChecksumMismatch`, not `error.Invalid`).
