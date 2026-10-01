@@ -102,6 +102,16 @@ const compile_error_cases = [_]CompileErrorCase{
     .{ .file = "deny_not_bool", .message = "deny_unknown_fields must be a bool" },
     .{ .file = "rename_not_string", .message = "rename values must be string literals" },
     .{ .file = "rename_empty", .message = "rename of .name is empty" },
+    .{
+        .file = "rename_all_not_literal",
+        .message = "rename_all must be an enum literal such as .kebab_case",
+    },
+    .{ .file = "rename_not_struct", .message = "rename must be an anonymous struct" },
+    .{ .file = "options_not_struct", .message = "sigil_options must be an anonymous struct" },
+    .{
+        .file = "options_with_stringify_hook",
+        .message = "the options would be dead; remove one",
+    },
     .{ .file = "untagged_union", .message = "is unsupported" },
     .{ .file = "unsupported_type", .message = "is not a struct, enum or tagged union" },
 };

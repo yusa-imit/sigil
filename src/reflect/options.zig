@@ -36,11 +36,14 @@ pub const Table = struct {
 };
 
 /// Resolves `T.sigil_options` (absent means no renames and `deny_unknown_fields = true`).
+/// The declaration must be `pub`: Zig cannot see a private one from another file, so a
+/// private `sigil_options` is indistinguishable from none and is silently not applied.
 /// Precondition: `T` is a struct, an enum or a tagged union. Comptime only.
 pub fn resolve(comptime T: type) Table {
     comptime {
-        @setEvalBranchQuota(1_000_000);
         const names = zig_names(T);
+        // The pairwise wire-name check dominates: names.len squared string compares.
+        @setEvalBranchQuota(10_000 + names.len * names.len * 256);
         const has_options = @hasDecl(T, "sigil_options");
         if (has_options) {
             if (@hasDecl(T, "sigilParse") or @hasDecl(T, "sigilStringify")) {
@@ -394,3 +397,46 @@ test "rename: single-letter words and digits" {
     try expect_rename("x_1_y", .pascal_case, "X1Y");
     try expect_rename("v2", .screaming_snake_case, "V2");
 }
+
+const Exempt = struct {
+    maxSize: u8,
+    other_name: u8,
+    pub const sigil_options = .{
+        .rename = .{ .maxSize = "max_size" },
+        .rename_all = RenameAll.kebab_case,
+    };
+};
+
+const Tagged = union(enum) {
+    first_kind: u8,
+    second_kind,
+    pub const sigil_options = .{ .rename = .{ .second_kind = "two" }, .rename_all = .snake_case };
+};
+
+test "resolve: an explicit rename exempts a non-snake name from rename_all" {
+    const table = comptime resolve(Exempt);
+    try std.testing.expectEqualStrings("max_size", table.entries[0].wire_name);
+    try std.testing.expectEqualStrings("other-name", table.entries[1].wire_name);
+}
+
+test "resolve: rename applies to union tags, rename_all snake_case is the identity" {
+    const table = comptime resolve(Tagged);
+    try std.testing.expectEqualStrings("first_kind", table.entries[0].wire_name);
+    try std.testing.expectEqualStrings("two", table.entries[1].wire_name);
+}
+
+test "resolve: a struct with many fields resolves within its branch quota" {
+    const Wide = @Struct(.auto, null, &wide_names, &wide_types, &wide_attrs);
+    const table = comptime resolve(Wide);
+    try std.testing.expectEqual(@as(usize, wide_names.len), table.entries.len);
+    try std.testing.expectEqual(@as(?u32, 63), find_wire(table, "f63"));
+}
+
+const wide_names = blk: {
+    @setEvalBranchQuota(100_000);
+    var names: [64][:0]const u8 = undefined;
+    for (&names, 0..) |*name, index| name.* = std.fmt.comptimePrint("f{d}", .{index});
+    break :blk names;
+};
+const wide_types = [_]type{u8} ** 64;
+const wide_attrs = [_]std.builtin.Type.StructField.Attributes{.{}} ** 64;

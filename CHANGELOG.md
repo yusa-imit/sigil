@@ -35,6 +35,10 @@ work.
   `decode_utf16` (surrogate-pair combining; a lone surrogate is `LoneSurrogate`, never U+FFFD),
   and `write_escaped` (`"`, `\\`, control escapes, and `\uXXXX` under the `ascii_only` policy;
   invalid UTF-8 is refused before anything is written). Re-exported from `sigil.core`.
+- `reflect/options.zig`: `resolve(T)` turns a type's `pub const sigil_options` (`rename`,
+  `rename_all`, `deny_unknown_fields`) into a comptime table of Zig name, wire name and default
+  presence; `find_wire` looks a wire name up. Every misuse is a `@compileError`, checked by
+  17 fixtures under `tests/compile_errors/`. Exposed as `sigil.reflect.options`.
 
 ### Fixed
 
