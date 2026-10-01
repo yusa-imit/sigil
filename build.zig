@@ -114,6 +114,13 @@ const compile_error_cases = [_]CompileErrorCase{
     },
     .{ .file = "untagged_union", .message = "is unsupported" },
     .{ .file = "unsupported_type", .message = "is not a struct, enum or tagged union" },
+    .{ .file = "parse_slice_u8", .message = "[]u8 is not supported" },
+    .{ .file = "parse_int_128", .message = "i128 is not supported" },
+    .{ .file = "parse_nested_optional", .message = "??u8 is not supported" },
+    .{ .file = "parse_struct", .message = "is not supported" },
+    .{ .file = "parse_nonexhaustive_enum", .message = "is not supported" },
+    .{ .file = "parse_pointer", .message = "*const u8 is not supported" },
+    .{ .file = "parse_f16", .message = "f16 is not supported" },
 };
 
 /// Compiles each `tests/compile_errors/<file>.zig` and passes only if the compiler rejects it

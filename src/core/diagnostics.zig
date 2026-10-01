@@ -28,6 +28,11 @@ pub const default_limits: Limits = .{ .message_len_max = 256, .snippet_len_max =
 /// Appended in place of the dropped tail when input exceeds a limit.
 pub const truncation_marker = "...";
 
+/// `line = col = position_none` means "no source position": the diagnostic came from a layer
+/// that sees a `Value` and not source text (`reflect`), and its message carries the key path.
+/// Format parsers keep positions 1-based, so 0 is never a real position (ADR 0002 section 3).
+pub const position_none: u32 = 0;
+
 /// Copies `input` into `buffer`, truncating with `truncation_marker` when `input` does not
 /// fit. Returns the live length, always `<= buffer.len`.
 /// Precondition: `buffer.len >= truncation_marker.len` (checked by `DiagnosticsType`'s
@@ -208,6 +213,18 @@ test "diagnostics: format renders exactly line:col: message" {
     try diag.format(&writer);
 
     try std.testing.expectEqualStrings("42:7: bad token", writer.buffered());
+}
+
+test "diagnostics: position_none is zero and format renders it as 0:0" {
+    try std.testing.expectEqual(@as(u32, 0), position_none);
+    const diag = Diagnostics.init(position_none, position_none, "x", null);
+    try std.testing.expectEqual(@as(u32, 0), diag.line);
+    try std.testing.expectEqual(@as(u32, 0), diag.col);
+
+    var buf: [16]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buf);
+    try diag.format(&writer);
+    try std.testing.expectEqualStrings("0:0: x", writer.buffered());
 }
 
 test "diagnostics: format dispatches through the {f} writer specifier" {
