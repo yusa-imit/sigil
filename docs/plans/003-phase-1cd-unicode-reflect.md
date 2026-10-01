@@ -46,7 +46,7 @@ consumer in `REALM.md` loads configs into structs), and Phase 2D reuses its opti
       `@compileError`, never a runtime surprise. Tests: resolved tables for sample structs;
       compile-error cases live in `tests/compile_errors/` and run as `zig build test` steps
       that invoke the compiler and expect the message.
-- [ ] **`reflect/parse.zig` — scalars.** `parse(comptime T, tree: *ValueTree, value: Value,
+- [x] **`reflect/parse.zig` — scalars.** `parse(comptime T, tree: *ValueTree, value: Value,
       diag: *Diagnostics) Error!T` for `bool`, sized ints, floats, `[]const u8` (borrowed from
       the tree, not copied; lifetime doc-commented), enums from strings, `?T`. Typed errors
       (`TypeMismatch`, `IntegerOutOfRange`, `InexactNumber`, `UnknownEnumValue`) each fill

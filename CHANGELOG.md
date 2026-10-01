@@ -39,6 +39,10 @@ work.
   `rename_all`, `deny_unknown_fields`) into a comptime table of Zig name, wire name and default
   presence; `find_wire` looks a wire name up. Every misuse is a `@compileError`, checked by
   17 fixtures under `tests/compile_errors/`. Exposed as `sigil.reflect.options`.
+- `reflect/context.zig` and `reflect/parse.zig`: `sigil.reflect.parse.parse(T, tree, value, diag)`
+  for scalars (`bool`, sized ints, `f32`/`f64`, `[]const u8`, exhaustive enums, `?T`,
+  `Timestamp`, `Value`), the `ParseError` set, the key `Path` and `Context` (`fail`,
+  `parse_child`), and `core.diagnostics.position_none` for path-only messages.
 
 ### Fixed
 
