@@ -43,6 +43,11 @@ work.
   for scalars (`bool`, sized ints, `f32`/`f64`, `[]const u8`, exhaustive enums, `?T`,
   `Timestamp`, `Value`), the `ParseError` set, the key `Path` and `Context` (`fail`,
   `parse_child`), and `core.diagnostics.position_none` for path-only messages.
+- `reflect/parse.zig`: plain structs (through the options table: defaults, `MissingField`,
+  `UnknownField` under `deny_unknown_fields`), `[N]T` (`LengthMismatch`) and `[]T`/`[]const T`
+  (one arena allocation of exactly `array.len`). Entering a 129th nested container is
+  `TooDeep`. Packed structs, tuples, `comptime` fields and sentinel slices or arrays are
+  `@compileError`s.
 
 ### Fixed
 

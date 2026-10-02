@@ -52,7 +52,7 @@ consumer in `REALM.md` loads configs into structs), and Phase 2D reuses its opti
       (`TypeMismatch`, `IntegerOutOfRange`, `InexactNumber`, `UnknownEnumValue`) each fill
       `diag`. Tests: every int width at min, max and one past each, from `.int` and `.uint`;
       `2^53 + 1` into `f64` rejected; `3.0` into `u8` rejected.
-- [ ] **`reflect/parse.zig` — structs and sequences.** Structs through the options table
+- [x] **`reflect/parse.zig` — structs and sequences.** Structs through the options table
       (defaults honored, `MissingField`, `UnknownField` under `deny_unknown_fields`), `[N]T`
       (`LengthMismatch`), `[]T` allocated once from the tree arena at exact `array.len`.
       Recursion carries a depth argument capped at `core.value.nesting_max` (`TooDeep`),
