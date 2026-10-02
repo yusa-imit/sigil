@@ -59,7 +59,7 @@ consumer in `REALM.md` loads configs into structs), and Phase 2D reuses its opti
       because a type like `struct { children: []Node }` otherwise recurses on input data.
       Tests: PRD §4.2 `Config` on a hand-built `Value`; nested key path in the message; depth
       128 accepted, 129 `TooDeep`; no leaks under `std.testing.allocator`.
-- [ ] **`reflect/parse.zig` — unions, string maps, hook.** Tagged unions per ADR 0002; an
+- [x] **`reflect/parse.zig` — unions, string maps, hook.** Tagged unions per ADR 0002; an
       unmanaged, order-preserving string array hash map sized once to `map.count` (PRD names
       `std.StringHashMap`, which stores its allocator and loses order, breaking round-trip; the
       ADR records the swap); `sigilParse` dispatched when `T` declares it. Tests: each union

@@ -127,6 +127,22 @@ const compile_error_cases = [_]CompileErrorCase{
     .{ .file = "parse_nonexhaustive_enum", .message = "is not supported" },
     .{ .file = "parse_pointer", .message = "*const u8 is not supported" },
     .{ .file = "parse_f16", .message = "f16 is not supported" },
+    .{ .file = "parse_hook_unpaired", .message = "declares sigilParse without sigilStringify" },
+    .{
+        .file = "parse_hook_unpaired_stringify",
+        .message = "declares sigilStringify without sigilParse",
+    },
+    .{
+        .file = "parse_hook_bad_signature",
+        .message = "sigilParse must be fn (*Context, Value) ParseError!T",
+    },
+    .{
+        .file = "parse_hook_bad_stringify",
+        .message = "sigilStringify must be fn (*const T, *Context) StringifyError!Value",
+    },
+    .{ .file = "parse_hook_with_options", .message = "the options would be dead; remove one" },
+    .{ .file = "parse_union_untagged", .message = "is not supported" },
+    .{ .file = "parse_string_map_wrong_key", .message = "is not supported" },
 };
 
 /// Compiles each `tests/compile_errors/<file>.zig` and passes only if the compiler rejects it

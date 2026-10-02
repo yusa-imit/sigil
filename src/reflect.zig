@@ -4,7 +4,7 @@
 //! Files (see docs/PRD.md and docs/adr/0002-reflect-contract.md):
 //!   - `reflect/options.zig` — landed: `sigil_options` resolved at comptime into a field table
 //!   - `reflect/context.zig` — landed: error sets, key `Path`, `Context` (`fail`, `parse_child`)
-//!   - `reflect/parse.zig` — scalars landed; structs, sequences, unions and hooks planned
+//!   - `reflect/parse.zig` — landed: scalars, structs, sequences, unions, string maps, hooks
 //!   - `reflect/stringify.zig`, `reflect/schema.zig` — planned
 //!
 //! Status: partial. Public declarations are added as plan 003 items land.
