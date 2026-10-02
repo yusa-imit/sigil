@@ -48,6 +48,11 @@ work.
   (one arena allocation of exactly `array.len`). Entering a 129th nested container is
   `TooDeep`. Packed structs, tuples, `comptime` fields and sentinel slices or arrays are
   `@compileError`s.
+- `reflect/parse.zig`: externally tagged unions (a void variant is its tag string, any other
+  variant a one-entry map; `UnknownEnumValue` for an unknown tag), `std.array_hash_map.String(V)`
+  maps (order-preserving, one arena reservation of `map.count`, borrowed keys), and the
+  `sigilParse`/`sigilStringify` hook pair (same `Context`, so path and depth continue). An
+  unpaired or mistyped hook and an untagged union are `@compileError`s.
 
 ### Fixed
 

@@ -130,6 +130,26 @@ pub const Rig = struct {
         try testing.expect(rig.diag.snippet_text() == null);
     }
 
+    /// Expects `err` and a diagnostics at `position_none` whose message starts with `prefix` and
+    /// is longer than it, for a reason text the ADR does not pin down.
+    pub fn fails_like(
+        rig: *Rig,
+        comptime T: type,
+        value: Value,
+        err: ParseError,
+        prefix: []const u8,
+    ) !void {
+        assert(@intFromPtr(rig) != 0);
+        assert(prefix.len < core.diagnostics.default_limits.message_len_max);
+        rig.diag = sentinel();
+        try testing.expectError(err, parse(T, &rig.tree, value, &rig.diag));
+        const message = rig.diag.message();
+        try testing.expect(std.mem.startsWith(u8, message, prefix));
+        try testing.expect(message.len > prefix.len);
+        try testing.expectEqual(position_none, rig.diag.line);
+        try testing.expectEqual(position_none, rig.diag.col);
+    }
+
     /// `value` into `T` is `TypeMismatch`: "expected {kind}, found {tag}".
     pub fn mismatch(
         rig: *Rig,
