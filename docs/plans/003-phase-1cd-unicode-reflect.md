@@ -64,7 +64,7 @@ consumer in `REALM.md` loads configs into structs), and Phase 2D reuses its opti
       `std.StringHashMap`, which stores its allocator and loses order, breaking round-trip; the
       ADR records the swap); `sigilParse` dispatched when `T` declares it. Tests: each union
       variant, unknown tag, hook wins over the default mapping.
-- [ ] **`reflect/stringify.zig`.** `stringify(comptime T, tree: *ValueTree, value: T,
+- [x] **`reflect/stringify.zig`.** `stringify(comptime T, tree: *ValueTree, value: T,
       diag: *Diagnostics) StringifyError!Value` (ADR 0002), the mirror of parse for every type above,
       honoring options and `sigilStringify`. `[]const u8` becomes `.string` only if valid UTF-8, else `InvalidUtf8`
       (never a silent `.bytes`); unsigned values above `maxInt(i64)` become `.uint`, all others

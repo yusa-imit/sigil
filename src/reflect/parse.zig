@@ -113,7 +113,8 @@ fn parse_kind(comptime T: type, context: *Context, value: Value) ParseError!T {
 /// of ADR 0002 section 1: it replaces the default mapping, so it also admits a type that
 /// `assert_supported` would reject. Comptime only; an unpaired or mistyped hook, or a hook
 /// next to `sigil_options`, is a `@compileError`.
-fn has_hook(comptime T: type) bool {
+pub fn has_hook(comptime T: type) bool {
+    comptime assert(@typeName(T).len > 0);
     switch (@typeInfo(T)) {
         .@"struct", .@"enum", .@"union" => {},
         else => return false,
@@ -137,22 +138,27 @@ fn has_hook(comptime T: type) bool {
     if (@hasDecl(T, "sigil_options")) {
         @compileError(@typeName(T) ++ ": the options would be dead; remove one");
     }
+    comptime assert(@hasDecl(T, "sigilParse"));
+    comptime assert(@hasDecl(T, "sigilStringify"));
     return true;
 }
 
 /// The value type `V` when `T` is exactly `std.array_hash_map.String(V)`, else null.
-fn string_map_value(comptime T: type) ?type {
+pub fn string_map_value(comptime T: type) ?type {
+    comptime assert(@typeName(T).len > 0);
     if (@typeInfo(T) != .@"struct") return null;
     if (!@hasDecl(T, "KV")) return null;
     if (@TypeOf(T.KV) != type) return null;
     if (@typeInfo(T.KV) != .@"struct") return null;
     if (!@hasField(T.KV, "value")) return null;
     const Item = @FieldType(T.KV, "value");
+    comptime assert(@typeInfo(T.KV) == .@"struct");
     return if (T == std.array_hash_map.String(Item)) Item else null;
 }
 
 /// `@compileError` naming `T` unless `parse_kind` has a parser for it.
-fn assert_supported(comptime T: type) void {
+pub fn assert_supported(comptime T: type) void {
+    comptime assert(@typeName(T).len > 0);
     if (T == Value or T == core.Timestamp) return;
     if (has_hook(T)) return;
     const supported = switch (@typeInfo(T)) {
@@ -168,6 +174,7 @@ fn assert_supported(comptime T: type) void {
         else => false,
     };
     if (!supported) @compileError(@typeName(T) ++ " is not supported");
+    comptime assert(supported);
     // Only `?T` is checked eagerly: a struct, array or slice checks its element types when it
     // parses them, because a recursive type (`children: []Node`) would never finish otherwise.
     if (@typeInfo(T) == .optional) assert_supported(@typeInfo(T).optional.child);

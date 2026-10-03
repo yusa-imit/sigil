@@ -11,6 +11,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const core = @import("../core.zig");
 const parse_mod = @import("parse.zig");
+const stringify_mod = @import("stringify.zig");
 
 const Value = core.Value;
 const ValueTree = core.ValueTree;
@@ -112,13 +113,56 @@ pub const Context = struct {
     ) ParseError {
         assert(context.path.count <= context.depth);
         assert(context.depth <= nesting_max);
+        context.write_message(format, args);
+        return err;
+    }
+
+    /// `fail` for the stringify direction: the same message grammar, a `StringifyError`.
+    /// Precondition: `path.count <= depth <= nesting_max`.
+    pub fn fail_stringify(
+        context: *Context,
+        err: StringifyError,
+        comptime format: []const u8,
+        args: anytype,
+    ) StringifyError {
+        assert(context.path.count <= context.depth);
+        assert(context.depth <= nesting_max);
+        context.write_message(format, args);
+        return err;
+    }
+
+    fn write_message(context: *Context, comptime format: []const u8, args: anytype) void {
+        assert(context.path.count <= context.depth);
+        assert(context.depth <= nesting_max);
         var reason_buffer: [reason_len_max + 1]u8 = @splat(0);
         const reason = format_reason(&reason_buffer, format, args);
         var out: [message_len_max]u8 = undefined;
         const message = render_message(context.path, reason, &out);
         context.diag.* = Diagnostics.init(position_none, position_none, message, null);
         context.diag_written = true;
-        return err;
+    }
+
+    /// Stringifies `value` as `U` one level below the current one, under `segment`; the mirror of
+    /// `parse_child`. On return the path and the depth are what they were on entry.
+    /// Fails with `TooDeep` when the depth is already `nesting_max`.
+    /// Precondition: `path.count <= depth <= nesting_max`.
+    pub fn stringify_child(
+        context: *Context,
+        comptime U: type,
+        segment: Segment,
+        value: *const U,
+    ) StringifyError!Value {
+        assert(context.path.count <= context.depth);
+        assert(context.depth <= nesting_max);
+        if (context.depth >= nesting_max) {
+            const text = "exceeds nesting depth limit {d}";
+            return context.fail_stringify(error.TooDeep, text, .{nesting_max});
+        }
+        context.path.push(segment);
+        context.depth += 1;
+        defer context.leave_child();
+
+        return stringify_mod.stringify_value(U, context, value);
     }
 
     /// Parses `value` as `U` one level below the current one, under `segment`. On return the
