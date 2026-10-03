@@ -309,4 +309,5 @@ fn clone_map(context: *Context, source: core.Map, level: u32) StringifyError!Val
 
 test {
     _ = @import("stringify_test.zig");
+    _ = @import("roundtrip_test.zig");
 }

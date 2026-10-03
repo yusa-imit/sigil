@@ -59,6 +59,9 @@ work.
   that is not UTF-8 is `InvalidUtf8`, never `.bytes`. Strings, arrays, maps and `Value` fields
   are copied into the tree. `Context.stringify_child` and `Context.fail_stringify` serve
   `sigilStringify` hooks; the 129th nested container is `TooDeep`.
+- `reflect/roundtrip_test.zig`: a seeded property test (1,000 seeds) over a matrix of every
+  supported kind nested several containers deep: `stringify` -> `parse` must equal the
+  original and a second `stringify` must be `eql` to the first. A failure logs its seed.
 
 ### Fixed
 

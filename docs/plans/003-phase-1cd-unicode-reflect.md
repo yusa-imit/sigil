@@ -70,7 +70,7 @@ consumer in `REALM.md` loads configs into structs), and Phase 2D reuses its opti
       (never a silent `.bytes`); unsigned values above `maxInt(i64)` become `.uint`, all others
       `.int`, matching `number.parse_integer` so round-trips stay `eql`. Tests: per type,
       expected `Value` compared with `core.value.eql`.
-- [ ] **Round-trip property test.** Seeded model-based test (`std.Random.DefaultPrng`, seed
+- [x] **Round-trip property test.** Seeded model-based test (`std.Random.DefaultPrng`, seed
       printed on failure): random instances of a fixed matrix covering every supported kind,
       nested 3 deep; `stringify`, `parse`, compare with the original, `stringify` again and
       compare the two `Value`s with `eql`. PRD §8 requires the type matrix; `REALM.md` makes
