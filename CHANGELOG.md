@@ -53,6 +53,12 @@ work.
   maps (order-preserving, one arena reservation of `map.count`, borrowed keys), and the
   `sigilParse`/`sigilStringify` hook pair (same `Context`, so path and depth continue). An
   unpaired or mistyped hook and an untagged union are `@compileError`s.
+- `reflect/stringify.zig`: `sigil.reflect.stringify.stringify(T, tree, value, diag)`, the mirror
+  of `parse` for every supported type, options table and hook included. Signed integers are
+  `.int`, unsigned ones `.int` up to `maxInt(i64)` and `.uint` above; a `[]const u8` or map key
+  that is not UTF-8 is `InvalidUtf8`, never `.bytes`. Strings, arrays, maps and `Value` fields
+  are copied into the tree. `Context.stringify_child` and `Context.fail_stringify` serve
+  `sigilStringify` hooks; the 129th nested container is `TooDeep`.
 
 ### Fixed
 
