@@ -8,7 +8,7 @@
 //!   - `reflect/stringify.zig` — landed: the mirror of parse, hooks included
 //!   - `reflect/schema.zig` — planned
 //!
-//! Status: partial. Public declarations are added as plan 003 items land.
+//! Status: `parse` and `stringify` are complete (plan 003); only `schema` is still planned.
 
 const std = @import("std");
 

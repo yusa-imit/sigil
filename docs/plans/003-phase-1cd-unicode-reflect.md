@@ -75,7 +75,7 @@ consumer in `REALM.md` loads configs into structs), and Phase 2D reuses its opti
       nested 3 deep; `stringify`, `parse`, compare with the original, `stringify` again and
       compare the two `Value`s with `eql`. PRD §8 requires the type matrix; `REALM.md` makes
       round-trip a property. Verification: 1,000 seeds pass in `zig build test`.
-- [ ] **Wire and close.** `reflect.zig` re-exports `options`/`parse`/`stringify`, `core.zig`
+- [x] **Wire and close.** `reflect.zig` re-exports `options`/`parse`/`stringify`, `core.zig`
       re-exports `unicode`; both drop `error.NotImplemented`. Tick 1A-1D in
       `docs/plans/000-inherited.md` (1A/1B are still unticked, missed at plan 002's close).
       Verification: tidy's assertion baseline counts the new public functions, still green.

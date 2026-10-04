@@ -13,10 +13,10 @@
 
 ## Phase 1 — Core & Reflect
 
-- [ ] 1A `core/{value,tree,diagnostics}.zig`
-- [ ] 1B `core/number.zig`
-- [ ] 1C `core/unicode.zig`
-- [ ] 1D `reflect/{parse,stringify,options}.zig`
+- [x] 1A `core/{value,tree,diagnostics}.zig`
+- [x] 1B `core/number.zig`
+- [x] 1C `core/unicode.zig`
+- [x] 1D `reflect/{parse,stringify,options}.zig`
 
 ## Phase 2 — JSON
 
