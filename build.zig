@@ -50,18 +50,18 @@ pub fn build(b: *std.Build) void {
     addTidyStep(b, test_step);
     addCompileErrorTests(b, test_step, mod, target);
 
-    // Benchmarks
-    const bench = b.addExecutable(.{
-        .name = "sigil-bench",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("bench/main.zig"),
-            .target = target,
-            .optimize = .ReleaseFast,
-            .imports = &.{
-                .{ .name = "sigil", .module = mod },
-            },
-        }),
+    // Benchmarks. The harness is also compiled and tested under `zig build test` so it cannot rot.
+    const bench_module = b.createModule(.{
+        .root_source_file = b.path("bench/main.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+        .imports = &.{
+            .{ .name = "sigil", .module = mod },
+        },
     });
+    const bench = b.addExecutable(.{ .name = "sigil-bench", .root_module = bench_module });
+    const bench_tests = b.addTest(.{ .root_module = bench_module });
+    test_step.dependOn(&b.addRunArtifact(bench_tests).step);
     const run_bench = b.addRunArtifact(bench);
     if (b.args) |args| run_bench.addArgs(args);
     const bench_step = b.step("bench", "Run benchmarks");
