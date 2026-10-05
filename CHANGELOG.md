@@ -6,8 +6,8 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
-Plan 002 (Phase 1A: `core/{value,tree,diagnostics}.zig`) starts the first real implementation
-work.
+Plans 002 and 003 (Phase 1A-1D: `core/` and `reflect/`) are implemented; the first tag lands
+with plan 004 (JSON).
 
 ### Added
 
@@ -62,9 +62,13 @@ work.
 - `reflect/roundtrip_test.zig`: a seeded property test (1,000 seeds) over a matrix of every
   supported kind nested several containers deep: `stringify` -> `parse` must equal the
   original and a second `stringify` must be `eql` to the first. A failure logs its seed.
+- `core.Error`: the union `number.Error || unicode.Error || EscapeError || {TooDeep,
+  OutOfMemory}`, replacing the `NotImplemented` placeholder; a comptime test pins its members.
 
 ### Fixed
 
+- `bench/main.zig`: ported to Zig 0.16 (`process.Init`, `Io.Clock.awake`, `std.mem.find`); the
+  harness is now compiled by `zig build test`, so it can no longer rot unnoticed.
 - `tools/tidy.zig`: moved `tidy_baseline.txt` from the repo root to `tools/` — the root was
   outside `citadel/protocol/DOCS.md`'s allowed file list. `--baseline`'s default now points at
   `./tools/tidy_baseline.txt`; no behavior change for `zig build tidy`.
