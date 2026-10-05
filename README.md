@@ -10,20 +10,21 @@ sigil은 하나의 `Value` 중간 표현과 comptime 리플렉션(struct ↔ Val
 
 ---
 
-## Status: Bootstrap — nothing below is implemented yet
+## Status: Phase 1 done (`core`, `reflect`); every format module is still a stub
 
-Every module in the table below is a **signature stub**: it declares its planned public shape
-and error set, but every entry point returns `error.NotImplemented`. The only working code is
-the `sigil` CLI (`version` / `--help`) in `src/main.zig`. See `docs/plans/` for milestone
-progress and `docs/PRD.md` for the full design. API is unstable and will change before Phase 1
-lands.
+`sigil.core` and `sigil.reflect` are implemented and tested (parse and stringify between Zig
+types and `Value`, with a seeded round-trip property test). Every other module in the table
+below is a **signature stub**: it declares its planned public shape and error set, but its
+entry points return `error.NotImplemented`. No format (JSON, TOML, ...) can be read or written
+yet; JSON is next (`docs/plans/`). `docs/PRD.md` has the full design. The API is unstable and
+may change before the first tag.
 
 ## Modules
 
 | Module | Status | Purpose |
 |---|---|---|
-| `sigil.core` | Planned | Value union, arena-owned ValueTree, Number parsing/formatting, Timestamp, Diagnostics (line:col), UTF-8/escape utils. |
-| `sigil.reflect` | Planned | comptime struct ↔ Value mapping: parse(T), stringify(T), field options (rename, defaults, deny_unknown), custom hooks, Schema(T) validation. |
+| `sigil.core` | Implemented | Value union, arena-owned ValueTree, decimal Number parsing, Timestamp, Diagnostics (line:col), strict UTF-8 validation and escape primitives. |
+| `sigil.reflect` | Implemented (`Schema(T)` planned) | comptime struct ↔ Value mapping: parse(T), stringify(T), field options (rename, defaults, deny_unknown), custom hooks. Schema(T) validation is not built yet. |
 | `sigil.json` | Planned (signature stub) | RFC 8259 pull scanner, DOM builder, pretty/minify writer, direct-to-struct streaming parse. `parseFile`/`stringifyFile` carry their final `io: Io` shape already — see `docs/adr/0001-io-convention.md`. |
 | `sigil.path` | Planned | JSON Pointer (RFC 6901), JSONPath (RFC 9535 subset), JSON Patch (RFC 6902), Merge Patch (RFC 7386) — all over Value. |
 | `sigil.toml` | Planned | TOML v1.0.0 lexer, parser, writer (order-preserving). toml-test suite. |
@@ -36,10 +37,9 @@ lands.
 
 ## Install
 
-No tag has been cut yet — `build.zig.zon`'s version has no functional code behind it, so a
-`zig fetch` today would hand you an empty library. The first tag lands once Phase 1
-(`core` + `reflect` + `json`) is real; the snippet below is the shape consumers will use once a
-release exists:
+No tag has been cut yet — no format module exists, so a `zig fetch` today would hand you
+`Value` and reflection with nothing to read or write. The first tag lands once `json` is real;
+the snippet below is the shape consumers will use once a release exists:
 
 ```zig
 // build.zig
