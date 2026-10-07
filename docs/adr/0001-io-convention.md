@@ -4,6 +4,8 @@
 - Date: 2026-09-10
 - Plan item: `docs/plans/001-zig-0.16-and-tiger-baseline.md` item 7 (kingdom spike)
 - Kingdom rule recorded in: `citadel/core/rules/zig-0.16.md`, "THE KINGDOM CONVENTION for `io: Io`"
+- Amended by: `docs/adr/0003-json-contract.md` §9 (json `parseFile`/`stringifyFile` gain a final
+  `diag: *core.Diagnostics`; `stringifyFile` takes `arena: Allocator` instead of `scratch: []u8`)
 
 ## Context
 

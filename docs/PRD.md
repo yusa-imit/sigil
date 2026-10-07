@@ -83,10 +83,9 @@ const Config = struct {
 // reflect 계층: Value <-> T. 결과는 트리 수명에 묶임
 const cfg = try sigil.reflect.parse(Config, &tree, tree.root, &diag);
 const value = try sigil.reflect.stringify(Config, &tree, cfg, &diag);
-// 포맷 계층(Phase 2): 바이트 -> ValueTree -> reflect.parse
-var tree = try sigil.toml.parse(Config, allocator, src, &diag);   // ValueTree 소유
-const cfg: Config = tree.value;
-const out = try sigil.json.stringify(allocator, cfg, .{ .pretty = true });
+// 포맷 계층(Phase 2, ADR 0003): 바이트 -> ValueTree -> reflect.parse. 트리는 호출자 소유
+const cfg = try sigil.json.parse(Config, &tree, src, parse_options, &diag);
+try sigil.json.stringify(Config, &tree, &writer, cfg, stringify_options, &diag);
 ```
 
 계약 전체는 `docs/adr/0002-reflect-contract.md`. 이 절은 요약이다.
@@ -118,7 +117,7 @@ const out = try sigil.json.stringify(allocator, cfg, .{ .pretty = true });
 
 | 포맷 | 파서 | 라이터 | 특이사항 |
 |---|---|---|---|
-| JSON | RFC 8259, pull + DOM | pretty/minify, 키 정렬 옵션 | 큰 정수 손실 없음(i64/u64/float 구분), 깊이 제한, 중복 키 정책 |
+| JSON | RFC 8259 엄격: 완전한 슬라이스 위 무할당 pull 스캐너 + DOM(카운트 패스 후 정확한 크기로 1회 할당, 재귀 없음) | minify/pretty(`indent_spaces`), `sort_keys`(키 바이트 순, 무할당). `.bytes`/`.timestamp`/NaN/inf는 `Unrepresentable`. float는 항상 `.0` 또는 지수 포함 | i64/u64/f64 구분, u64 초과 정수는 에러(float로 바꾸지 않음). BOM·주석·후행 쉼표 거부. 깊이 128(`TooDeep`). 중복 키 `reject`/`last`. 진단은 1-based line:col(col은 바이트). 계약 전체는 `docs/adr/0003-json-contract.md` |
 | TOML | v1.0.0 전체 | 주석 보존 없음(v1), 테이블 순서 보존 | 날짜/시간 4종, 인라인 테이블, 배열 테이블. toml-test 스위트 통과 |
 | YAML | 1.2 코어 스키마 서브셋: 블록/플로우 매핑·시퀀스, 스칼라, 앵커/별칭, 멀티라인 | 블록 스타일 | 태그(!!) 미지원, 문서 스트림(`---`) 지원. 빌리언 러프 방어(별칭 확장 제한) |
 | MessagePack | 전 타입, ext | | 스트리밍, 제로카피 bin/str |
@@ -153,7 +152,7 @@ var cfg = try sigil.config.load(AppConfig, allocator, .{
 | JSON 직렬화 | > 800 MB/s |
 | TOML 파싱 (100KB) | < 1 ms |
 | MessagePack 인코딩 | > 1 GB/s |
-| 메모리 | DOM은 입력의 2× 이내 (아레나) |
+| 메모리 | DOM 아레나 ≤ 문자열·키 원문 길이 + 배열 원소당 32 B + 객체 멤버당 48 B + 컨테이너당 4 B (ADR 0003 §4; 32 B `Value`로는 2×가 불가능). 벤치가 입력 바이트당 아레나 바이트를 기록 |
 
 ## 6. 마일스톤
 
