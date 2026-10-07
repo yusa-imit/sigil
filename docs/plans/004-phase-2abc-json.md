@@ -17,7 +17,7 @@ streaming) and 2E (path) build on this scanner and DOM, so they wait.
 
 ## Scope
 
-- [ ] **ADR 0003 — JSON contract (design only, `architect`).** Pins what 2D-2F and every later
+- [x] **ADR 0003 — JSON contract (design only, `architect`).** Pins what 2D-2F and every later
       text format copy: (a) scanner API over a complete slice, zero allocation, raw string slices
       plus a `has_escapes` flag, depth in a fixed bit stack with `depth_max <= nesting_max`
       asserted; (b) `u32` offsets, line:col computed from the offset only on failure, and the

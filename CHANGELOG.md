@@ -11,6 +11,8 @@ with plan 004 (JSON).
 
 ### Added
 
+- `docs/adr/0003-json-contract.md`: the JSON scanner, position, error, DOM-sizing, strictness
+  and writer contract (plan 004 item 1); amends ADR 0001's json signatures and PRD §4.2/§4.3/§5.
 - `core/value.zig`: the `Value` union, `Timestamp`, an insertion-ordered `Map` over a
   caller-supplied entry buffer (`put` returns `DuplicateKey`/`OutOfSpace`), and a structural
   `eql` with an explicit bounded stack (`nesting_max` = 128). Re-exported from `sigil.core`.
