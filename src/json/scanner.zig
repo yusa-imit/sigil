@@ -265,7 +265,7 @@ pub const Scanner = struct {
         assert(limit > start);
         assert(limit <= scanner.input.len);
         const invalid = core.unicode.find_invalid(scanner.input[start + 1 .. limit]) catch |err| {
-            switch (err) { // proof: `core.unicode.Error` holds no `Canceled`.
+            switch (err) { // proof: `core.unicode.Error` has no I/O variant.
                 // proof: `init` checked `input.len <= maxInt(u32)`, so the slice is shorter.
                 error.InputTooLarge => unreachable,
             }
@@ -402,9 +402,9 @@ fn walk_string_body(input: []const u8, body_start: u32) Body {
         has_escapes = true;
         const escape_len = check_escape(input, index) catch |err| {
             // An escape cut short by the input end is reported there, any other at its backslash.
-            const offset: u32 = switch (err) { // proof: `ScanError` holds no `Canceled`.
+            const offset: u32 = switch (err) { // proof: `EscapeFault` has no I/O variant.
                 error.UnexpectedEnd => @intCast(input.len),
-                else => index,
+                error.InvalidEscape, error.LoneSurrogate => index,
             };
             return .{ .failed = .{ .err = err, .offset = offset } };
         };
@@ -414,8 +414,11 @@ fn walk_string_body(input: []const u8, body_start: u32) Body {
     unreachable; // proof: `body_start >= 1` and each pass advances, so index reaches input.len.
 }
 
+/// Why an escape is bad; the walk maps these to an offset, so the set is closed on purpose.
+const EscapeFault = error{ UnexpectedEnd, InvalidEscape, LoneSurrogate };
+
 /// The byte length of the escape whose backslash is at `backslash` (2, 6, or 12 for a pair).
-fn check_escape(input: []const u8, backslash: u32) ScanError!u32 {
+fn check_escape(input: []const u8, backslash: u32) EscapeFault!u32 {
     assert(input[backslash] == '\\');
     const at = backslash + 1;
     if (at >= input.len) return error.UnexpectedEnd;
@@ -427,29 +430,36 @@ fn check_escape(input: []const u8, backslash: u32) ScanError!u32 {
     const first = try read_hex4(input, at + 1);
     if (first < 0xD800 or first > 0xDFFF) return 6;
     const second = peek_second_unit(input, backslash + 6);
-    // proof: the errors below are data errors of the escape set; no I/O, so no `Canceled`.
+    // `decode_utf16` documents `LoneSurrogate` as its only failure; `InvalidHex` and
+    // `InvalidCodepoint` belong to `parse_hex4` and `encode`, which it does not call.
+    // proof: no I/O here, and the two other members cannot occur.
     const decoded = core.unicode_escape.decode_utf16(first, second) catch |err| switch (err) {
         error.LoneSurrogate => return error.LoneSurrogate,
-        // proof: `first` came from `parse_hex4` and is at most 0xFFFF; no codepoint is encoded.
         error.InvalidHex, error.InvalidCodepoint => unreachable,
     };
+    assert(decoded.units_count == 1 or decoded.units_count == 2);
+    assert(decoded.units_count == 2 or first > 0xDBFF);
     return @as(u32, decoded.units_count) * 6;
 }
 
 /// The four hex digits at `at` as a UTF-16 unit. A non-hex byte is `InvalidEscape` even when
 /// fewer than four bytes remain; otherwise a short run is `UnexpectedEnd`.
-fn read_hex4(input: []const u8, at: u32) ScanError!u16 {
+fn read_hex4(input: []const u8, at: u32) EscapeFault!u16 {
     assert(at <= input.len);
     const available = @min(input.len - at, 4);
     for (input[at..][0..available]) |digit| {
         if (!std.ascii.isHex(digit)) return error.InvalidEscape;
     }
     if (available < 4) return error.UnexpectedEnd;
-    return hex4_at(input, at) orelse unreachable; // proof: all four bytes were checked as hex.
+    const unit = hex4_at(input, at) orelse unreachable; // proof: all four bytes were hex.
+    assert(available == 4);
+    return unit;
 }
 
 /// The unit of a `\uXXXX` escape starting at `at`, or null when none follows there.
 fn peek_second_unit(input: []const u8, at: u32) ?u16 {
+    assert(at >= 6);
+    assert(at <= input.len);
     if (input.len < @as(usize, at) + 6) return null;
     if (input[at] != '\\') return null;
     if (input[at + 1] != 'u') return null;
@@ -460,16 +470,19 @@ fn peek_second_unit(input: []const u8, at: u32) ?u16 {
 fn hex4_at(input: []const u8, at: u32) ?u16 {
     assert(input.len >= @as(usize, at) + 4);
     const digits: *const [4]u8 = input[at..][0..4];
-    return core.unicode_escape.parse_hex4(digits) catch |err| switch (err) { // proof: no I/O here.
+    // `parse_hex4` documents `InvalidHex` as its only failure; the other two members of
+    // `EscapeError` belong to `decode_utf16` and `encode`.
+    // proof: no I/O here, and the two other members cannot occur.
+    return core.unicode_escape.parse_hex4(digits) catch |err| switch (err) {
         error.InvalidHex => null,
-        // proof: `parse_hex4` returns only `InvalidHex`; the others belong to the shared set.
         error.LoneSurrogate, error.InvalidCodepoint => unreachable,
     };
 }
 
 /// Decodes the escapes of a validated `.key`/`.string` `raw` into `out`; returns the decoded
 /// prefix of `out`. Precondition: `raw` came from a token (so every escape is well formed) and
-/// `out.len >= raw.len`, which suffices because an escape never grows. Allocation: none.
+/// `out.len >= raw.len`, which suffices because an escape never grows. Breaking either is
+/// undefined behaviour in ReleaseFast. Allocation: none.
 pub fn decode_string(raw: []const u8, out: []u8) []u8 {
     assert(out.len >= raw.len);
     var read: usize = 0;
@@ -491,6 +504,7 @@ pub fn decode_string(raw: []const u8, out: []u8) []u8 {
     return out[0..written];
 }
 
+/// How many bytes one escape consumed from `raw` and produced into `out`.
 const EscapeStep = struct { read_len: u8, written_len: u8 };
 
 /// Decodes the one escape at the start of `rest` into `out`. Preconditions: it is well formed
@@ -512,6 +526,7 @@ fn decode_escape(rest: []const u8, out: []u8) EscapeStep {
     return .{ .read_len = 2, .written_len = 1 };
 }
 
+/// The `\uXXXX` or `\uXXXX\uXXXX` escape at the start of `rest`, as UTF-8 into `out`.
 fn decode_unicode_escape(rest: []const u8, out: []u8) EscapeStep {
     assert(rest.len >= 6);
     assert(rest[1] == 'u');

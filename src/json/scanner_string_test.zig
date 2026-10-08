@@ -140,6 +140,10 @@ test "string: lone and mispaired surrogates are LoneSurrogate, never U+FFFD" {
     try expect_string_failure("\"\\ud800\\n\"", error.LoneSurrogate, 1, 2);
     try expect_string_failure("\"\\udbff\"", error.LoneSurrogate, 1, 2);
     try expect_string_failure("\"\\udfff\\ud800\"", error.LoneSurrogate, 1, 2);
+    try expect_string_failure("\"\\ud83d\\uZZZZ\"", error.LoneSurrogate, 1, 2);
+    try expect_string_failure("\"\\ud83d\\u12\"", error.LoneSurrogate, 1, 2);
+    try expect_string_failure("\"\\ud83d\\ude0", error.LoneSurrogate, 1, 2);
+    try expect_string_failure("\"\\ud83d", error.LoneSurrogate, 1, 2);
 }
 
 test "string: invalid UTF-8 is reported at the first byte of the bad sequence" {
@@ -160,13 +164,13 @@ test "string: the earlier of two faults wins" {
     try expect_string_failure("\"\\x\xff\"", error.InvalidEscape, 1, 2);
 }
 
-test "string: unterminated strings and escapes are UnexpectedEnd at input end" {
+test "string: unterminated strings and escapes end at the input end" {
     try expect_string_failure("\"abc", error.UnexpectedEnd, 1, 5);
     try expect_string_failure("\"", error.UnexpectedEnd, 1, 2);
     try expect_string_failure("\"abc\\", error.UnexpectedEnd, 1, 6);
     try expect_string_failure("\"\\u00", error.UnexpectedEnd, 1, 6);
-    try expect_string_failure("\"\\ud83d\\ude0", error.LoneSurrogate, 1, 2);
-    try expect_string_failure("\"\\ud83d", error.LoneSurrogate, 1, 2);
+    // Input ending inside a string whose last bytes are a truncated sequence: UTF-8 wins.
+    try expect_string_failure("\"\xe2\x82", error.InvalidUtf8, 1, 2);
 }
 
 test "string: a fault on a later line reports that line and byte column" {
@@ -183,6 +187,8 @@ test "string: keys follow the same rules as values" {
     try expect(key.kind == .key);
     try expect(key.has_escapes);
     try expectEqualStrings("k\\u00e9", key.raw);
+    var out: [16]u8 = undefined;
+    try expectEqualStrings("k\xc3\xa9", scanner.decode_string(key.raw, out[0..key.raw.len]));
 
     try sc.init("{\"k\xff\":1}", .{ .depth_max = 8 });
     _ = try sc.next(&diag);
@@ -345,6 +351,8 @@ const differential_corpus = [_][]const u8{
     &entry("{\"k\": \"\xff\"}"),
 };
 
+// The seed corpus holds one entry per string-related `ScanError`; only `zig build test --fuzz`
+// mutates beyond it.
 test "string: fuzz differential against std.json.validate" {
     try std.testing.fuzz({}, differential_one, .{ .corpus = &differential_corpus });
 }
