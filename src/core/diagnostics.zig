@@ -155,6 +155,54 @@ pub fn DiagnosticsType(comptime limits: Limits) type {
 /// The `DiagnosticsType` most callers use; format modules fill this on every parse failure.
 pub const Diagnostics = DiagnosticsType(default_limits);
 
+/// A 1-based source position. `col` counts bytes, not codepoints, so it is defined on invalid
+/// UTF-8 too (ADR 0003 section 2).
+pub const Position = struct { line: u32, col: u32 };
+
+/// Line and column of byte `offset` in `input`, computed on demand: parsers track no line in
+/// their hot loop and pay this O(offset) scan once, on failure. `\n` ends a line; a lone `\r`
+/// does not, and `\r\n` counts once because only the `\n` counts.
+/// Precondition: `input.len <= maxInt(u32)` and `offset <= input.len` (one past the last byte
+/// is the position of an unexpected end).
+pub fn position_of(input: []const u8, offset: u32) Position {
+    assert(input.len <= std.math.maxInt(u32));
+    assert(offset <= input.len);
+
+    const head = input[0..offset];
+    const line_start: u32 = if (std.mem.findScalarLast(u8, head, '\n')) |index|
+        @intCast(index + 1)
+    else
+        0;
+    const line_count: u32 = @intCast(std.mem.count(u8, head, "\n"));
+    // Saturating: an input of exactly `maxInt(u32)` bytes that is one line, or all newlines,
+    // reports its end at `maxInt(u32) + 1`, and an error path must never overflow-panic.
+    const position: Position = .{ .line = 1 +| line_count, .col = 1 +| (offset - line_start) };
+    assert(position.line >= 1);
+    assert(position.col >= 1);
+    return position;
+}
+
+/// The failing line around `offset`, for `Diagnostics.init`: from the later of the line start
+/// and `snippet_len_max / 2` bytes before `offset`, up to (excluding) the next `\n`.
+/// `Diagnostics.init` cuts what is still too long. Borrows `input`.
+/// Precondition: `input.len <= maxInt(u32)` and `offset <= input.len`.
+pub fn snippet_of(input: []const u8, offset: u32) []const u8 {
+    assert(input.len <= std.math.maxInt(u32));
+    assert(offset <= input.len);
+
+    const half = default_limits.snippet_len_max / 2;
+    const line_start: u32 = if (std.mem.findScalarLast(u8, input[0..offset], '\n')) |index|
+        @intCast(index + 1)
+    else
+        0;
+    const start = @max(line_start, offset -| half);
+    const stop = std.mem.findScalarPos(u8, input, offset, '\n') orelse input.len;
+    const snippet = input[start..stop];
+    assert(snippet.len == stop - start);
+    assert(std.mem.findScalar(u8, snippet, '\n') == null);
+    return snippet;
+}
+
 test "diagnostics: short message and snippet round-trip unchanged" {
     const diag = Diagnostics.init(1, 1, "unexpected token", "he");
     try std.testing.expectEqualStrings("unexpected token", diag.message());
@@ -257,6 +305,55 @@ test "diagnostics: a smaller Limits truncates independently of default_limits" {
     const big_diag = Diagnostics.init(1, 1, input, input);
     try std.testing.expectEqualStrings(input, big_diag.message());
     try std.testing.expectEqualStrings(input, big_diag.snippet_text().?);
+}
+
+test "position_of: offset 0 is 1:1, also on empty input" {
+    try std.testing.expectEqual(Position{ .line = 1, .col = 1 }, position_of("", 0));
+    try std.testing.expectEqual(Position{ .line = 1, .col = 1 }, position_of("abc", 0));
+}
+
+test "position_of: columns count bytes and are 1-based" {
+    try std.testing.expectEqual(Position{ .line = 1, .col = 3 }, position_of("abc", 2));
+    // One past the last byte is a valid position (UnexpectedEnd points there).
+    try std.testing.expectEqual(Position{ .line = 1, .col = 4 }, position_of("abc", 3));
+    // A two-byte codepoint counts as two columns: columns are bytes, not codepoints.
+    try std.testing.expectEqual(Position{ .line = 1, .col = 4 }, position_of("\xc3\xa9x", 3));
+}
+
+test "position_of: a newline starts the next line at col 1" {
+    const input = "ab\ncd\n\nef";
+    try std.testing.expectEqual(Position{ .line = 1, .col = 3 }, position_of(input, 2));
+    try std.testing.expectEqual(Position{ .line = 2, .col = 1 }, position_of(input, 3));
+    try std.testing.expectEqual(Position{ .line = 2, .col = 3 }, position_of(input, 5));
+    try std.testing.expectEqual(Position{ .line = 3, .col = 1 }, position_of(input, 6));
+    try std.testing.expectEqual(Position{ .line = 4, .col = 3 }, position_of(input, 9));
+}
+
+test "position_of: CR alone is not a line break, CRLF counts once" {
+    try std.testing.expectEqual(Position{ .line = 1, .col = 4 }, position_of("a\rb", 3));
+    try std.testing.expectEqual(Position{ .line = 2, .col = 1 }, position_of("a\r\nb", 3));
+}
+
+test "snippet_of: the whole line when it is short" {
+    const input = "{\n  \"a\": 1,\n  \"b\": ]\n}";
+    try std.testing.expectEqualStrings("  \"b\": ]", snippet_of(input, 18));
+    try std.testing.expectEqualStrings("{", snippet_of(input, 0));
+    try std.testing.expectEqualStrings("}", snippet_of(input, input.len));
+}
+
+test "snippet_of: empty line and empty input give an empty snippet" {
+    try std.testing.expectEqualStrings("", snippet_of("", 0));
+    try std.testing.expectEqualStrings("", snippet_of("a\n\nb", 2));
+}
+
+test "snippet_of: a long line starts snippet_len_max / 2 before the offset" {
+    const half = default_limits.snippet_len_max / 2;
+    const input = "x" ** 200 ++ "Y" ++ "z" ** 200 ++ "\nnext";
+    const snippet = snippet_of(input, 200);
+    try std.testing.expectEqual(@as(usize, half + 1 + 200), snippet.len);
+    try std.testing.expectEqual(@as(u8, 'Y'), snippet[half]);
+    // Near the line start the window clamps to the line start, never into the previous line.
+    try std.testing.expectEqualStrings("xxY", snippet_of("ab\nxxY", 5));
 }
 
 test "diagnostics: message_len_max at the minimum legal wall (truncation_marker.len) still works" {

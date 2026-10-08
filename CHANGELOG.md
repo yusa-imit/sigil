@@ -11,6 +11,11 @@ with plan 004 (JSON).
 
 ### Added
 
+- `json/scanner.zig`: the pull tokenizer over one complete slice (plan 004 item 2) with
+  object/array structure, literals, RFC 8259 numbers, `depth_max` nesting and line:col
+  diagnostics. String content is not validated yet (item 3).
+- `core.diagnostics.Position`, `position_of` and `snippet_of`: line:col in bytes and the
+  failing line, computed from an offset only on failure.
 - `docs/adr/0003-json-contract.md`: the JSON scanner, position, error, DOM-sizing, strictness
   and writer contract (plan 004 item 1); amends ADR 0001's json signatures and PRD §4.2/§4.3/§5.
 - `core/value.zig`: the `Value` union, `Timestamp`, an insertion-ordered `Map` over a

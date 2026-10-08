@@ -29,7 +29,7 @@ streaming) and 2E (path) build on this scanner and DOM, so they wait.
       without allocation; (g) writer refuses `.bytes`, `.timestamp`, NaN/inf; floats always
       re-parse as `.float`; (h) `diag` joins `parseFile`, amending ADR 0001.
       Verification: `docs/adr/0003-json-contract.md` exists; PRD §4.3 JSON row matches it.
-- [ ] **`json/scanner.zig` — structure, literals, numbers.** `next()` yields object/array
+- [x] **`json/scanner.zig` — structure, literals, numbers.** `next()` yields object/array
       begin/end, `true`/`false`/`null`, and raw number text checked against RFC 8259 §6 (no
       leading zero, no `+`, no `.5`, no `1.`). Tests: each token kind; each number edge; depth
       128 accepted, 129 `TooDeep`; empty input, trailing data and truncation each fill `diag`
