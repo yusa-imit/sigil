@@ -13,7 +13,12 @@ with plan 004 (JSON).
 
 - `json/scanner.zig`: the pull tokenizer over one complete slice (plan 004 item 2) with
   object/array structure, literals, RFC 8259 numbers, `depth_max` nesting and line:col
-  diagnostics. String content is not validated yet (item 3).
+  diagnostics.
+- `json/scanner.zig` strings (plan 004 item 3): `.key`/`.string` tokens are validated whole
+  (strict UTF-8, no raw byte below 0x20, escape syntax, surrogate pairing) with the new
+  `InvalidEscape`, `LoneSurrogate`, `ControlCharacter` and `InvalidUtf8` errors, plus
+  `decode_string(raw, out)`, which cannot fail on a validated token. A seed-corpus differential
+  fuzz against `std.json.validate` runs in `zig build test`.
 - `core.diagnostics.Position`, `position_of` and `snippet_of`: line:col in bytes and the
   failing line, computed from an offset only on failure.
 - `docs/adr/0003-json-contract.md`: the JSON scanner, position, error, DOM-sizing, strictness
