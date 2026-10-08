@@ -34,7 +34,7 @@ streaming) and 2E (path) build on this scanner and DOM, so they wait.
       leading zero, no `+`, no `.5`, no `1.`). Tests: each token kind; each number edge; depth
       128 accepted, 129 `TooDeep`; empty input, trailing data and truncation each fill `diag`
       with the right line:col on multi-line input.
-- [ ] **`json/scanner.zig` — strings.** UTF-8 via `core.unicode.find_invalid`, raw controls
+- [x] **`json/scanner.zig` — strings.** UTF-8 via `core.unicode.find_invalid`, raw controls
       below 0x20 rejected, escapes via `parse_hex4`/`decode_utf16` (a lone surrogate is a typed
       error), and `decode_string(raw, out)` into a caller buffer (`out.len >= raw.len` is
       enough, asserted). Tests: every escape, surrogate edges, bad UTF-8 at a known col, and a

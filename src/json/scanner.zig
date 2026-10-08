@@ -5,9 +5,10 @@
 //! 8259 section 6 number grammar. Number text is grammar-checked, not range-checked: range is
 //! the consumer's business.
 //!
-//! Status (plan 004 item 2): a `.key`/`.string` token ends at the first unescaped quote and its
-//! content is NOT validated yet. Item 3 adds UTF-8, control-byte, escape and surrogate checks,
-//! plus the `decode_string` function and the four `ScanError` variants that go with them.
+//! A `.key`/`.string` token is validated whole before it is returned: strict UTF-8
+//! (`core.unicode.find_invalid`), no raw byte below 0x20, escape syntax, and surrogate pairing
+//! (`core.unicode_escape`). The earliest fault wins. Such a token is always decodable, so
+//! `decode_string` has no error set.
 //!
 //! Invariants: `offset <= input.len <= maxInt(u32)`; `depth <= depth_max <= nesting_max`; bit
 //! `d` of `containers` is set iff open container number `d` is an object. Every `raw` is a
@@ -63,6 +64,14 @@ pub const ScanError = error{
     InvalidNumber,
     /// Container number `depth_max + 1`.
     TooDeep,
+    /// `\` followed by a byte outside `"\/bfnrtu`, or a `\u` without four hex digits.
+    InvalidEscape,
+    /// A `\uD800`..`\uDFFF` escape without its partner: unpaired, or a lone low surrogate.
+    LoneSurrogate,
+    /// A raw byte below 0x20 inside a string.
+    ControlCharacter,
+    /// A string holds bytes that are not strict UTF-8.
+    InvalidUtf8,
 };
 
 pub const Scanner = struct {
@@ -242,33 +251,38 @@ pub const Scanner = struct {
         return token;
     }
 
-    /// Item 2 placeholder: ends at the first unescaped quote and checks nothing else.
+    /// A validated string: the structural walk finds the closing quote or the first fault, then
+    /// UTF-8 is checked over the bytes before it, so a bad byte ahead of the fault is reported.
     fn scan_string(scanner: *Scanner, diag: *Diagnostics, kind: Kind) ScanError!Token {
         assert(kind == .key or kind == .string);
         assert(scanner.input[scanner.offset] == '"');
         const start = scanner.offset;
-        var index: usize = start + 1;
-        var has_escapes = false;
-        for (0..scanner.input.len) |_| {
-            if (index >= scanner.input.len) {
-                return scanner.fail(diag, error.UnexpectedEnd, @intCast(scanner.input.len));
-            }
-            const byte = scanner.input[index];
-            if (byte == '"') break;
-            if (byte == '\\') {
-                has_escapes = true;
-                index += 1;
-            }
-            index += 1;
-        } else unreachable; // proof: each pass advances index, so it reaches input.len.
-        assert(scanner.input[index] == '"');
-        scanner.offset = @intCast(index + 1);
-        return .{
-            .kind = kind,
-            .has_escapes = has_escapes,
-            .offset = start,
-            .raw = scanner.input[start + 1 .. index],
+        const body = walk_string_body(scanner.input, start + 1);
+        const limit = switch (body) {
+            .closed => |closed| closed.quote_offset,
+            .failed => |failed| failed.offset,
         };
+        assert(limit > start);
+        assert(limit <= scanner.input.len);
+        const invalid = core.unicode.find_invalid(scanner.input[start + 1 .. limit]) catch |err| {
+            switch (err) { // proof: `core.unicode.Error` holds no `Canceled`.
+                // proof: `init` checked `input.len <= maxInt(u32)`, so the slice is shorter.
+                error.InputTooLarge => unreachable,
+            }
+        };
+        if (invalid) |bad| return scanner.fail(diag, error.InvalidUtf8, start + 1 + bad.offset);
+        switch (body) {
+            .failed => |failed| return scanner.fail(diag, failed.err, failed.offset),
+            .closed => |closed| {
+                scanner.offset = closed.quote_offset + 1;
+                return .{
+                    .kind = kind,
+                    .has_escapes = closed.has_escapes,
+                    .offset = start,
+                    .raw = scanner.input[start + 1 .. closed.quote_offset],
+                };
+            },
+        }
     }
 
     fn scan_literal(
@@ -351,9 +365,167 @@ pub const Scanner = struct {
             error.TrailingData => "trailing data after the root value",
             error.InvalidNumber => "invalid number",
             error.TooDeep => "nesting is too deep",
+            error.InvalidEscape => "invalid escape sequence",
+            error.LoneSurrogate => "unpaired UTF-16 surrogate in escape",
+            error.ControlCharacter => "unescaped control character in string",
+            error.InvalidUtf8 => "invalid UTF-8 in string",
         };
     }
 };
+
+/// How a string body ended: at its closing quote, or at the first structural fault.
+const Body = union(enum) {
+    closed: struct { quote_offset: u32, has_escapes: bool },
+    failed: struct { err: ScanError, offset: u32 },
+};
+
+/// Walks the string body from `body_start` (the byte after the opening quote) checking control
+/// bytes and escapes. UTF-8 is not judged here. Bounded: each pass advances at least one byte.
+fn walk_string_body(input: []const u8, body_start: u32) Body {
+    assert(body_start >= 1);
+    assert(input[body_start - 1] == '"');
+    var index: u32 = body_start;
+    var has_escapes = false;
+    for (0..input.len) |_| {
+        if (index >= input.len) {
+            return .{ .failed = .{ .err = error.UnexpectedEnd, .offset = @intCast(input.len) } };
+        }
+        const byte = input[index];
+        if (byte == '"') {
+            return .{ .closed = .{ .quote_offset = index, .has_escapes = has_escapes } };
+        }
+        if (byte < 0x20) return .{ .failed = .{ .err = error.ControlCharacter, .offset = index } };
+        if (byte != '\\') {
+            index += 1;
+            continue;
+        }
+        has_escapes = true;
+        const escape_len = check_escape(input, index) catch |err| {
+            // An escape cut short by the input end is reported there, any other at its backslash.
+            const offset: u32 = switch (err) { // proof: `ScanError` holds no `Canceled`.
+                error.UnexpectedEnd => @intCast(input.len),
+                else => index,
+            };
+            return .{ .failed = .{ .err = err, .offset = offset } };
+        };
+        assert(escape_len == 2 or escape_len == 6 or escape_len == 12);
+        index += escape_len;
+    }
+    unreachable; // proof: `body_start >= 1` and each pass advances, so index reaches input.len.
+}
+
+/// The byte length of the escape whose backslash is at `backslash` (2, 6, or 12 for a pair).
+fn check_escape(input: []const u8, backslash: u32) ScanError!u32 {
+    assert(input[backslash] == '\\');
+    const at = backslash + 1;
+    if (at >= input.len) return error.UnexpectedEnd;
+    switch (input[at]) {
+        '"', '\\', '/', 'b', 'f', 'n', 'r', 't' => return 2,
+        'u' => {},
+        else => return error.InvalidEscape,
+    }
+    const first = try read_hex4(input, at + 1);
+    if (first < 0xD800 or first > 0xDFFF) return 6;
+    const second = peek_second_unit(input, backslash + 6);
+    // proof: the errors below are data errors of the escape set; no I/O, so no `Canceled`.
+    const decoded = core.unicode_escape.decode_utf16(first, second) catch |err| switch (err) {
+        error.LoneSurrogate => return error.LoneSurrogate,
+        // proof: `first` came from `parse_hex4` and is at most 0xFFFF; no codepoint is encoded.
+        error.InvalidHex, error.InvalidCodepoint => unreachable,
+    };
+    return @as(u32, decoded.units_count) * 6;
+}
+
+/// The four hex digits at `at` as a UTF-16 unit. A non-hex byte is `InvalidEscape` even when
+/// fewer than four bytes remain; otherwise a short run is `UnexpectedEnd`.
+fn read_hex4(input: []const u8, at: u32) ScanError!u16 {
+    assert(at <= input.len);
+    const available = @min(input.len - at, 4);
+    for (input[at..][0..available]) |digit| {
+        if (!std.ascii.isHex(digit)) return error.InvalidEscape;
+    }
+    if (available < 4) return error.UnexpectedEnd;
+    return hex4_at(input, at) orelse unreachable; // proof: all four bytes were checked as hex.
+}
+
+/// The unit of a `\uXXXX` escape starting at `at`, or null when none follows there.
+fn peek_second_unit(input: []const u8, at: u32) ?u16 {
+    if (input.len < @as(usize, at) + 6) return null;
+    if (input[at] != '\\') return null;
+    if (input[at + 1] != 'u') return null;
+    return hex4_at(input, at + 2);
+}
+
+/// Four hex digits at `at` (precondition: they are inside `input`), or null if any is not hex.
+fn hex4_at(input: []const u8, at: u32) ?u16 {
+    assert(input.len >= @as(usize, at) + 4);
+    const digits: *const [4]u8 = input[at..][0..4];
+    return core.unicode_escape.parse_hex4(digits) catch |err| switch (err) { // proof: no I/O here.
+        error.InvalidHex => null,
+        // proof: `parse_hex4` returns only `InvalidHex`; the others belong to the shared set.
+        error.LoneSurrogate, error.InvalidCodepoint => unreachable,
+    };
+}
+
+/// Decodes the escapes of a validated `.key`/`.string` `raw` into `out`; returns the decoded
+/// prefix of `out`. Precondition: `raw` came from a token (so every escape is well formed) and
+/// `out.len >= raw.len`, which suffices because an escape never grows. Allocation: none.
+pub fn decode_string(raw: []const u8, out: []u8) []u8 {
+    assert(out.len >= raw.len);
+    var read: usize = 0;
+    var written: usize = 0;
+    for (0..raw.len) |_| {
+        if (read == raw.len) break;
+        if (raw[read] != '\\') {
+            out[written] = raw[read];
+            read += 1;
+            written += 1;
+            continue;
+        }
+        const step = decode_escape(raw[read..], out[written..]);
+        read += step.read_len;
+        written += step.written_len;
+    }
+    assert(read == raw.len);
+    assert(written <= read);
+    return out[0..written];
+}
+
+const EscapeStep = struct { read_len: u8, written_len: u8 };
+
+/// Decodes the one escape at the start of `rest` into `out`. Preconditions: it is well formed
+/// and `out` has room for its result (at most as many bytes as the escape has).
+fn decode_escape(rest: []const u8, out: []u8) EscapeStep {
+    assert(rest.len >= 2);
+    assert(rest[0] == '\\');
+    const simple: u8 = switch (rest[1]) {
+        '"', '\\', '/' => rest[1],
+        'b' => 0x08,
+        'f' => 0x0c,
+        'n' => '\n',
+        'r' => '\r',
+        't' => '\t',
+        'u' => return decode_unicode_escape(rest, out),
+        else => unreachable, // proof: the scanner rejected every other escape byte.
+    };
+    out[0] = simple;
+    return .{ .read_len = 2, .written_len = 1 };
+}
+
+fn decode_unicode_escape(rest: []const u8, out: []u8) EscapeStep {
+    assert(rest.len >= 6);
+    assert(rest[1] == 'u');
+    const first = hex4_at(rest, 2) orelse unreachable; // proof: the scanner checked the digits.
+    const second: ?u16 = if (first >= 0xD800 and first <= 0xDBFF) hex4_at(rest, 8) else null;
+    // proof: the scanner paired every surrogate, so decoding succeeds.
+    const decoded = core.unicode_escape.decode_utf16(first, second) catch unreachable;
+    var buf: [4]u8 = undefined;
+    // proof: `decode_utf16` never yields a surrogate or a value above U+10FFFF.
+    const len = core.unicode_escape.encode(decoded.codepoint, &buf) catch unreachable;
+    assert(len <= out.len);
+    @memcpy(out[0..len], buf[0..len]);
+    return .{ .read_len = @as(u8, decoded.units_count) * 6, .written_len = len };
+}
 
 fn is_bom_at(input: []const u8, offset: u32) bool {
     return std.mem.startsWith(u8, input[offset..], "\xef\xbb\xbf");
@@ -404,4 +576,5 @@ fn skip_digits(run: []const u8, start: usize) ?usize {
 
 test {
     _ = @import("scanner_test.zig");
+    _ = @import("scanner_string_test.zig");
 }
