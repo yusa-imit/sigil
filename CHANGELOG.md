@@ -19,6 +19,10 @@ with plan 004 (JSON).
   `InvalidEscape`, `LoneSurrogate`, `ControlCharacter` and `InvalidUtf8` errors, plus
   `decode_string(raw, out)`, which cannot fail on a validated token. A seed-corpus differential
   fuzz against `std.json.validate` runs in `zig build test`.
+- `json/dom.zig` (plan 004 item 4): `parse(tree, input, options, diag)` builds a `Value` in a
+  `ValueTree` in two scans with no recursion, copying every string, keeping `i64`/`u64`/`f64`
+  distinct through `core.number`, and applying the `reject`/`last` duplicate-key policy.
+  `Map.index_of` is the new core primitive behind it.
 - `core.diagnostics.Position`, `position_of` and `snippet_of`: line:col in bytes and the
   failing line, computed from an offset only on failure.
 - `docs/adr/0003-json-contract.md`: the JSON scanner, position, error, DOM-sizing, strictness

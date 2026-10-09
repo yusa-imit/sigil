@@ -77,10 +77,19 @@ pub const Map = struct {
     /// Returns the value stored under `key`, or null. Points into the map's buffer.
     pub fn get(map: *const Map, key: []const u8) ?*const Value {
         assert(map.count <= map.entries.len);
-        for (map.items()) |*entry| {
+        const index = map.index_of(key) orelse return null;
+        assert(index < map.count);
+        return &map.entries[index].value;
+    }
+
+    /// The slot of `key` among the live entries, or null. O(count): the linear scan `get` and
+    /// `put` already pay, exposed so a parser can overwrite a slot in place.
+    pub fn index_of(map: *const Map, key: []const u8) ?u32 {
+        assert(map.count <= map.entries.len);
+        for (map.items(), 0..) |entry, index| {
             if (std.mem.eql(u8, entry.key, key)) {
                 assert(entry.key.len == key.len);
-                return &entry.value;
+                return @intCast(index);
             }
         }
         return null;
@@ -324,4 +333,31 @@ test "value: eql accepts nesting_max and rejects one deeper with TooDeep" {
     // levels[0] holds nesting_max + 1 containers, levels[1] holds nesting_max.
     try std.testing.expect(try eql(levels[1], levels[1]));
     try std.testing.expectError(error.TooDeep, eql(levels[0], levels[0]));
+}
+
+test "value: Map.index_of finds the slot of a key and is null for absent keys" {
+    var buffer: [3]Map.Entry = undefined;
+    var map = Map.init(&buffer);
+    try std.testing.expectEqual(@as(?u32, null), map.index_of("a"));
+
+    try map.put("a", .null);
+    try map.put("", .{ .int = 1 });
+    try map.put("ab", .{ .int = 2 });
+    try std.testing.expectEqual(@as(?u32, 0), map.index_of("a"));
+    try std.testing.expectEqual(@as(?u32, 1), map.index_of(""));
+    try std.testing.expectEqual(@as(?u32, 2), map.index_of("ab"));
+    try std.testing.expectEqual(@as(?u32, null), map.index_of("b"));
+    try std.testing.expectEqual(@as(?u32, null), map.index_of("abc"));
+    map.check_invariants();
+}
+
+test "value: Map.index_of ignores buffer slots past count" {
+    var buffer = [_]Map.Entry{
+        .{ .key = "live", .value = .null },
+        .{ .key = "stale", .value = .null },
+    };
+    const map: Map = .{ .entries = &buffer, .count = 1 };
+    try std.testing.expectEqual(@as(?u32, 0), map.index_of("live"));
+    try std.testing.expectEqual(@as(?u32, null), map.index_of("stale"));
+    try std.testing.expect(map.get("stale") == null);
 }

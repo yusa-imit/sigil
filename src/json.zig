@@ -1,9 +1,8 @@
 //! sigil.json — RFC 8259 pull scanner, DOM builder, pretty/minify writer, direct-to-struct
 //! streaming parse.
 //!
+//! Landed: `json/scanner.zig` (pull tokenizer), `json/dom.zig` (bytes into a `ValueTree`).
 //! Planned files (see docs/PRD.md):
-//!   - `json/scanner.zig`
-//!   - `json/dom.zig`
 //!   - `json/writer.zig`
 //!   - `json/reflect.zig`
 //!
@@ -21,6 +20,7 @@ const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 
 pub const scanner = @import("json/scanner.zig");
+pub const dom = @import("json/dom.zig");
 
 /// Module-level error set. Extend as functionality lands; keep names descriptive
 /// (`error.ChecksumMismatch`, not `error.Invalid`).
@@ -29,7 +29,7 @@ pub const Error = error{
 };
 
 /// What to do when an object repeats a key.
-pub const DuplicateKeyPolicy = enum { first, last, reject };
+pub const DuplicateKeyPolicy = dom.DuplicateKeyPolicy;
 
 /// Every field is required: no defaults.
 pub const ParseOptions = struct {
