@@ -40,7 +40,7 @@ streaming) and 2E (path) build on this scanner and DOM, so they wait.
       enough, asserted). Tests: every escape, surrogate edges, bad UTF-8 at a known col, and a
       `std.testing.fuzz` differential against `std.json` accept/reject whose seed corpus runs
       in `zig build test`. Why: one oracle catches what hand-written cases miss.
-- [ ] **`json/dom.zig`.** Bytes into a `ValueTree` per ADR 0003: no recursion (explicit stack
+- [x] **`json/dom.zig`.** Bytes into a `ValueTree` per ADR 0003: no recursion (explicit stack
       bounded by `depth_max`), numbers through `core.number`, so i64/u64/f64 stay distinct, and
       the duplicate-key policy. Tests: `18446744073709551615` is `.uint`,
       `-9223372036854775808` is `.int`, `1e400` is `FloatOutOfRange`, each duplicate policy,
