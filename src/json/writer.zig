@@ -107,9 +107,9 @@ const Frame = struct {
     members: Members,
     /// Members started so far, `<=` the member count.
     emitted: u64,
-    /// Index of the member being written; meaningful when `emitted > 0`.
+    /// Index of the member being written; read only when `emitted > 0`.
     current: u64,
-    /// The key of the member started last under `sort_keys`.
+    /// The key of the member started last; `sort_keys` selects the next one above it.
     last_key: ?[]const u8,
 
     fn member_count(frame: *const Frame) u64 {
@@ -169,7 +169,8 @@ const Emitter = struct {
     fn run(emitter: *Emitter, root: Value) WriteValueError!void {
         assert(emitter.depth == 0);
         try emitter.begin_value(root);
-        // Every step writes a member or closes a container, so the loop ends with the stack.
+        // Each step starts one member or closes one container, so there are at most twice as many
+        // steps as nodes; a tree is memory-resident at 32 bytes a node, far below maxInt(usize).
         for (0..std.math.maxInt(usize)) |_| {
             if (emitter.depth == 0) return;
             try emitter.step();
@@ -180,7 +181,10 @@ const Emitter = struct {
     fn begin_value(emitter: *Emitter, value: Value) WriteValueError!void {
         switch (value) {
             .array => |items| try emitter.open('[', .{ .array = items }),
-            .map => |map| try emitter.open('{', .{ .map = map.items() }),
+            .map => |map| {
+                map.check_invariants();
+                try emitter.open('{', .{ .map = map.items() });
+            },
             else => try emitter.write_scalar(value),
         }
     }
@@ -231,9 +235,12 @@ const Emitter = struct {
         assert(emitter.depth > 0);
         const frame = &emitter.frames[emitter.depth - 1];
         assert(frame.emitted == frame.member_count());
-        if (frame.emitted > 0) try emitter.newline_indent(emitter.depth - 1);
-        try emitter.w.writeByte(bracket);
+        // The frame is popped first, so a failure below names the container, not its last member.
+        const depth_before = emitter.depth;
         emitter.depth -= 1;
+        if (frame.emitted > 0) try emitter.newline_indent(emitter.depth);
+        try emitter.w.writeByte(bracket);
+        assert(emitter.depth + 1 == depth_before);
     }
 
     /// Before a member: a comma unless it is the first, then the line break of `.pretty`.
@@ -306,7 +313,7 @@ const Emitter = struct {
 
 /// The reason text of `err`; `refusal` says what `Unrepresentable` refused.
 fn failure_reason(err: WriteValueError, refusal: Refusal) []const u8 {
-    // proof: `WriteValueError` holds no cancelation, so `error.Canceled` cannot occur.
+    // proof: the five variants of `WriteValueError` are all handled; none is a cancelation.
     switch (err) {
         error.Unrepresentable => return switch (refusal) {
             .bytes => "bytes cannot be written as JSON",
@@ -340,7 +347,7 @@ fn format_float(buffer: *[float_text_len_max]u8, number: f64) []const u8 {
 }
 
 fn format_plain(buffer: *[float_text_len_max]u8, number: f64) []const u8 {
-    // proof: at most 17 digits, 4 zeros, a sign and a point fit in float_text_len_max - 2.
+    // proof: 17 digits, 5 zeros, a sign and a point (25 bytes) fit in float_text_len_max - 2.
     return std.fmt.bufPrint(buffer, "{d}", .{number}) catch unreachable;
 }
 

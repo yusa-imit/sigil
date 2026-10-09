@@ -304,10 +304,11 @@ test "writer: pretty and sort_keys together into a fixed buffer" {
     try expectEqualStrings("{\n  \"j\": null,\n  \"k\": 0.25\n}", fixed.buffered());
 }
 
-/// A random Value the writer accepts: finite floats, UTF-8 strings, unique keys, `.uint` only
-/// above `maxInt(i64)` (the canonical form). Built in `arena`.
+/// The smallest `.uint` that is not also an `.int`.
 const uint_min: u64 = std.math.maxInt(i64) + 1;
 
+/// A random Value the writer accepts: finite floats, UTF-8 strings, unique keys, `.uint` only
+/// above `maxInt(i64)` (the canonical form). Built in `arena`.
 fn random_value(arena: std.mem.Allocator, random: std.Random, depth: u32) !Value {
     const container_kinds: u8 = if (depth < 6) 2 else 0;
     switch (random.uintLessThan(u8, 6 + container_kinds)) {
@@ -402,4 +403,27 @@ test "writer: seeded model, layouts agree and std.json accepts every output" {
         try expectEqual(min_aw.written().len, sorted_aw.written().len);
         try expect(try std.json.validate(arena, sorted_aw.written()));
     }
+}
+
+test "writer: a failure at a closing bracket names the container, not its last member" {
+    const items = [_]Value{ .{ .int = 1 }, .{ .int = 2 } };
+    var entries: [1]Map.Entry = undefined;
+    const value = try map_of(&entries, &.{"a"}, &.{.{ .array = &items }});
+    // `{"a":[1,2` is 9 bytes, so the `]` is the byte that does not fit.
+    var buffer: [9]u8 = undefined;
+    var fixed: std.Io.Writer = .fixed(&buffer);
+    var diag = fresh_diag();
+    try std.testing.expectError(error.WriteFailed, writer.write(&fixed, value, minified, &diag));
+    try expectEqualStrings("a: output writer failed", diag.message());
+    try expectEqualStrings("{\"a\":[1,2", fixed.buffered());
+}
+
+test "writer: TooDeep through a map key names the key path" {
+    var inner_entries: [1]Map.Entry = undefined;
+    const inner = try map_of(&inner_entries, &.{"k"}, &.{.null});
+    var entries: [1]Map.Entry = undefined;
+    const value = try map_of(&entries, &.{"a"}, &.{inner});
+    var shallow = minified;
+    shallow.depth_max = 1;
+    try expect_fail(value, shallow, error.TooDeep, "a: exceeds the depth limit");
 }
