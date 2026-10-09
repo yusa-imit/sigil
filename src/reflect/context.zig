@@ -134,11 +134,7 @@ pub const Context = struct {
     fn write_message(context: *Context, comptime format: []const u8, args: anytype) void {
         assert(context.path.count <= context.depth);
         assert(context.depth <= nesting_max);
-        var reason_buffer: [reason_len_max + 1]u8 = @splat(0);
-        const reason = format_reason(&reason_buffer, format, args);
-        var out: [message_len_max]u8 = undefined;
-        const message = render_message(context.path, reason, &out);
-        context.diag.* = Diagnostics.init(position_none, position_none, message, null);
+        write_diagnostic(context.diag, context.path, format, args);
         context.diag_written = true;
     }
 
@@ -196,6 +192,25 @@ pub const Context = struct {
         context.depth -= 1;
     }
 };
+
+/// Writes `"{path}: {reason}"` to `diag` at `position_none`; the body of `Context.fail`, public so
+/// a writer that has no `Context` (json/writer.zig) uses the same path grammar and the same cuts.
+/// The path is rendered from its last segment backwards. Precondition: `path.count <= nesting_max`.
+pub fn write_diagnostic(
+    diag: *Diagnostics,
+    path: *const Path,
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    assert(path.count <= nesting_max);
+    var reason_buffer: [reason_len_max + 1]u8 = @splat(0);
+    const reason = format_reason(&reason_buffer, format, args);
+    assert(reason.len <= reason_len_max);
+    var out: [message_len_max]u8 = undefined;
+    const message = render_message(path, reason, &out);
+    diag.* = Diagnostics.init(position_none, position_none, message, null);
+    assert(diag.message().len == message.len);
+}
 
 /// Formats the reason into `buffer`; one byte more than `reason_len_max` tells a reason that
 /// fits exactly from one that does not. A longer reason is cut to `reason_len_max` bytes
