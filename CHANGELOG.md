@@ -23,6 +23,11 @@ with plan 004 (JSON).
   `ValueTree` in two scans with no recursion, copying every string, keeping `i64`/`u64`/`f64`
   distinct through `core.number`, and applying the `reject`/`last` duplicate-key policy.
   `Map.index_of` is the new core primitive behind it.
+- `json/writer.zig` (plan 004 item 5): `write(w, value, options, diag)` emits minified or pretty
+  JSON with no recursion and no allocation, orders keys by byte with `sort_keys`, writes floats
+  that always re-parse as floats, and refuses `.bytes`, `.timestamp`, NaN and infinity with an
+  `Unrepresentable` key-path diagnostic. `reflect.context.write_diagnostic` is the public form of
+  the path message `Context.fail` already rendered.
 - `core.diagnostics.Position`, `position_of` and `snippet_of`: line:col in bytes and the
   failing line, computed from an offset only on failure.
 - `docs/adr/0003-json-contract.md`: the JSON scanner, position, error, DOM-sizing, strictness

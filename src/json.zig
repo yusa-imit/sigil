@@ -1,9 +1,8 @@
 //! sigil.json — RFC 8259 pull scanner, DOM builder, pretty/minify writer, direct-to-struct
 //! streaming parse.
 //!
-//! Landed: `json/scanner.zig` (pull tokenizer), `json/dom.zig` (bytes into a `ValueTree`).
-//! Planned files (see docs/PRD.md):
-//!   - `json/writer.zig`
+//! Landed: `json/scanner.zig` (pull tokenizer), `json/dom.zig` (bytes into a `ValueTree`),
+//! `json/writer.zig` (minify/pretty). Planned files (see docs/PRD.md):
 //!   - `json/reflect.zig`
 //!
 //! Status: stub. `parseFile`/`stringifyFile` carry the file-shaped signature that every format
@@ -21,6 +20,7 @@ const assert = std.debug.assert;
 
 pub const scanner = @import("json/scanner.zig");
 pub const dom = @import("json/dom.zig");
+pub const writer = @import("json/writer.zig");
 
 /// Module-level error set. Extend as functionality lands; keep names descriptive
 /// (`error.ChecksumMismatch`, not `error.Invalid`).

@@ -45,7 +45,7 @@ streaming) and 2E (path) build on this scanner and DOM, so they wait.
       the duplicate-key policy. Tests: `18446744073709551615` is `.uint`,
       `-9223372036854775808` is `.int`, `1e400` is `FloatOutOfRange`, each duplicate policy,
       no leak, and an OOM sweep with `std.testing.checkAllAllocationFailures`.
-- [ ] **`json/writer.zig`.** `write(w: *std.Io.Writer, value, options, diag)`: minify, pretty
+- [x] **`json/writer.zig`.** `write(w: *std.Io.Writer, value, options, diag)`: minify, pretty
       with `indent_spaces`, `sort_keys`; escapes via `core.unicode_escape.write_escaped`;
       explicit stack bounded by `depth_max`; allocates nothing (ADR 0001). Tests: golden output
       per mode; floats `0.1`, `1.0`, `-0.0`, `5e-324`, `1e300`; each refused kind with its key

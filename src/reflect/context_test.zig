@@ -508,3 +508,21 @@ test "context: seeded model of path stack, fail rendering and parse_child agree 
         try testing.expect(f.path.count <= f.context.depth and f.context.depth <= nesting_max);
     }
 }
+
+test "write_diagnostic: renders the path grammar without a Context and at position_none" {
+    var path: Path = undefined;
+    path.init();
+    path.push(.{ .key = "servers" });
+    path.push(.{ .index = 2 });
+    path.push(.{ .key = "host name" });
+    var diag = sentinel();
+    context_mod.write_diagnostic(&diag, &path, "cannot write {s}", .{"bytes"});
+    try testing.expectEqualStrings("servers[2][\"host name\"]: cannot write bytes", diag.message());
+    try testing.expectEqual(position_none, diag.line);
+    try testing.expectEqual(position_none, diag.col);
+    try testing.expect(diag.snippet_text() == null);
+
+    path.init();
+    context_mod.write_diagnostic(&diag, &path, "root only", .{});
+    try testing.expectEqualStrings("root only", diag.message());
+}
