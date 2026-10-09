@@ -171,6 +171,20 @@ test "dom: empty containers have zero length" {
     try expectEqual(@as(u32, 0), map.map.count);
 }
 
+test "dom: containers are allocated at exactly their counted size" {
+    var tree: ValueTree = undefined;
+    tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    const text = "{\"a\":[1,2,3],\"b\":{\"c\":null,\"d\":[]}}";
+    const value = try parse_ok(&tree, text, options_reject);
+    try expectEqual(@as(usize, 2), value.map.entries.len);
+    try expectEqual(@as(usize, 3), value.map.get("a").?.array.len);
+    const inner = value.map.get("b").?.map;
+    try expectEqual(@as(usize, 2), inner.entries.len);
+    try expectEqual(inner.count, @as(u32, @intCast(inner.entries.len)));
+}
+
 test "dom: reject refuses a repeated key at the second key" {
     try expect_fail("{\"a\":1,\"b\":2,\"a\":3}", options_reject, error.DuplicateKey, 1, 14);
     try expect_fail("{\n  \"x\": 1,\n  \"x\": 2\n}", options_reject, error.DuplicateKey, 3, 3);
@@ -246,6 +260,7 @@ test "dom: nesting passes at depth_max and fails one deeper" {
 }
 
 test "dom: input past maxInt(u32) is InputTooLarge before any byte is read" {
+    if (@sizeOf(usize) < 8) return error.SkipZigTest;
     // A slice header with a length past maxInt(u32); the bytes are never read.
     const len = @as(usize, std.math.maxInt(u32)) + 1;
     const huge: []const u8 = @as([*]const u8, @ptrFromInt(4096))[0..len];
@@ -280,7 +295,13 @@ fn parse_for_oom(gpa: std.mem.Allocator, input: []const u8) !void {
     defer tree.deinit();
 
     var diag = fresh_diag();
-    const value = try dom.parse(&tree, input, options_last, &diag);
+    const value = dom.parse(&tree, input, options_last, &diag) catch |err| {
+        // Every allocation failure must have reported itself.
+        try expect(diag.line != sentinel_line);
+        try expect(diag.message().len > 0);
+        return err;
+    };
+    try expectEqual(sentinel_line, diag.line);
     try expect(value != .null);
 }
 

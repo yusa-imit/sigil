@@ -49,11 +49,13 @@ pub const ParseOptions = struct {
 /// What building the tree adds to the scanner's errors.
 pub const BuildError = core.number.Error || error{ DuplicateKey, OutOfMemory };
 
+/// Every error `parse` can return (15 variants, ADR 0003 section 3).
 pub const ParseValueError = scanner.ScanError || BuildError || error{InputTooLarge};
 
 comptime {
     assert(@sizeOf(Value) == 32);
     assert(@sizeOf(Map.Entry) == 48);
+    assert(@typeInfo(ParseValueError).error_set.?.len == 15);
 }
 
 /// Parses `input`, one complete JSON document, into `tree` and returns its root. The root is
