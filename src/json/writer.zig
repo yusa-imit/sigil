@@ -358,4 +358,5 @@ fn format_exponent(buffer: *[float_text_len_max]u8, number: f64) []const u8 {
 
 test {
     _ = @import("writer_test.zig");
+    _ = @import("roundtrip_test.zig");
 }

@@ -305,11 +305,11 @@ test "writer: pretty and sort_keys together into a fixed buffer" {
 }
 
 /// The smallest `.uint` that is not also an `.int`.
-const uint_min: u64 = std.math.maxInt(i64) + 1;
+pub const uint_min: u64 = std.math.maxInt(i64) + 1;
 
 /// A random Value the writer accepts: finite floats, UTF-8 strings, unique keys, `.uint` only
 /// above `maxInt(i64)` (the canonical form). Built in `arena`.
-fn random_value(arena: std.mem.Allocator, random: std.Random, depth: u32) !Value {
+pub fn random_value(arena: std.mem.Allocator, random: std.Random, depth: u32) !Value {
     const container_kinds: u8 = if (depth < 6) 2 else 0;
     switch (random.uintLessThan(u8, 6 + container_kinds)) {
         0 => return .null,
