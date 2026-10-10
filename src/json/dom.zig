@@ -359,4 +359,5 @@ fn build(
 
 test {
     _ = @import("dom_test.zig");
+    _ = @import("suite_test.zig");
 }

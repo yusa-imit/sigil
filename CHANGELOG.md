@@ -23,6 +23,9 @@ with plan 004 (JSON).
   `ValueTree` in two scans with no recursion, copying every string, keeping `i64`/`u64`/`f64`
   distinct through `core.number`, and applying the `reject`/`last` duplicate-key policy.
   `Map.index_of` is the new core primitive behind it.
+- `json/suite_test.zig` and `tests/json/` (plan 004 item 7): the MIT-licensed JSONTestSuite
+  corpus (318 files) vendored with its license. Every `y_` parses, every `n_` fails with a
+  nonzero line:col, and the 35 `i_` outcomes are pinned.
 - `json/roundtrip_test.zig` (plan 004 item 6): 1,000 seeded canonical `Value`s and the number
   edges survive write, `dom.parse` and `core.eql` in minified, pretty and `sort_keys` output.
 - `json/writer.zig` (plan 004 item 5): `write(w, value, options, diag)` emits minified or pretty

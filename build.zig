@@ -41,6 +41,8 @@ pub fn build(b: *std.Build) void {
     // Tests
     const mod_tests = b.addTest(.{ .root_module = mod });
     const run_mod_tests = b.addRunArtifact(mod_tests);
+    // `json/suite_test.zig` reads the vendored corpus under `tests/json/` relative to the root.
+    run_mod_tests.setCwd(b.path("."));
     const exe_tests = b.addTest(.{ .root_module = exe.root_module });
     const run_exe_tests = b.addRunArtifact(exe_tests);
     const test_step = b.step("test", "Run unit tests");
