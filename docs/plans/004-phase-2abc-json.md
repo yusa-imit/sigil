@@ -50,7 +50,7 @@ streaming) and 2E (path) build on this scanner and DOM, so they wait.
       explicit stack bounded by `depth_max`; allocates nothing (ADR 0001). Tests: golden output
       per mode; floats `0.1`, `1.0`, `-0.0`, `5e-324`, `1e300`; each refused kind with its key
       path; `WriteFailed` from a full fixed writer.
-- [ ] **Round-trip property test.** Seeded generator of canonical JSON-representable `Value`s
+- [x] **Round-trip property test.** Seeded generator of canonical JSON-representable `Value`s
       (astral strings, number edges, nesting to 8); write minified and pretty, parse, compare
       with `eql`; seed logged via `std.log.err` on failure. Why: `REALM.md` makes round-trip a
       property, not a unit test. Verification: 1,000 seeds pass in `zig build test`.

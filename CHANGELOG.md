@@ -23,6 +23,8 @@ with plan 004 (JSON).
   `ValueTree` in two scans with no recursion, copying every string, keeping `i64`/`u64`/`f64`
   distinct through `core.number`, and applying the `reject`/`last` duplicate-key policy.
   `Map.index_of` is the new core primitive behind it.
+- `json/roundtrip_test.zig` (plan 004 item 6): 1,000 seeded canonical `Value`s and the number
+  edges survive write, `dom.parse` and `core.eql` in minified, pretty and `sort_keys` output.
 - `json/writer.zig` (plan 004 item 5): `write(w, value, options, diag)` emits minified or pretty
   JSON with no recursion and no allocation, orders keys by byte with `sort_keys`, writes floats
   that always re-parse as floats, and refuses `.bytes`, `.timestamp`, NaN and infinity with an
