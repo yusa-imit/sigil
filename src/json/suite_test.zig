@@ -93,7 +93,7 @@ fn parse_outcome(gpa: std.mem.Allocator, input: []const u8) !Outcome {
     defer tree.deinit();
 
     var diag = Diagnostics.init(0, 0, "", null);
-    // proof: `ParseValueError` holds no I/O error, so `error.Canceled` cannot occur.
+    // proof: no I/O here, so `error.Canceled` cannot occur; every other error is a rejection.
     _ = dom.parse(&tree, input, parse_options, &diag) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return .{
@@ -181,7 +181,7 @@ test "suite: every pinned i_ file exists in the corpus" {
 
     const names = try list_corpus(arena_state.allocator(), io);
     for (pinned_accepted ++ pinned_rejected) |pin| try expect(contains(names, pin));
-    try expectEqual(either_count, pinned_accepted.len + pinned_rejected.len);
+    comptime std.debug.assert(either_count == pinned_accepted.len + pinned_rejected.len);
 }
 
 test "suite: the y_ duplicate-key files are rejected under the reject policy" {
@@ -199,12 +199,33 @@ test "suite: the y_ duplicate-key files are rejected under the reject policy" {
         defer gpa.free(input);
 
         var tree: ValueTree = undefined;
-        tree.init(std.testing.allocator);
+        tree.init(gpa);
         defer tree.deinit();
 
         var diag = Diagnostics.init(0, 0, "", null);
         const reject: dom.ParseOptions = .{ .depth_max = 128, .duplicate_key = .reject };
         try std.testing.expectError(error.DuplicateKey, dom.parse(&tree, input, reject, &diag));
         try expectEqual(@as(u32, 1), diag.line);
+        try expect(diag.col >= 1);
+        try expect(diag.message().len > 0);
     }
+}
+
+test "suite: under the last policy the last duplicate wins" {
+    const io = std.testing.io;
+    var dir = try std.Io.Dir.cwd().openDir(io, corpus_path, .{});
+    defer dir.close(io);
+
+    const gpa = std.testing.allocator;
+    const input = try dir.readFileAlloc(io, "y_object_duplicated_key.json", gpa, .limited(64));
+    defer gpa.free(input);
+
+    var tree: ValueTree = undefined;
+    tree.init(gpa);
+    defer tree.deinit();
+
+    var diag = Diagnostics.init(0, 0, "", null);
+    const root = try dom.parse(&tree, input, parse_options, &diag);
+    try expectEqual(@as(usize, 1), root.map.count);
+    try std.testing.expectEqualStrings("c", root.map.get("a").?.string);
 }
