@@ -11,6 +11,7 @@ zig-pkg/
 *.log
 *.db
 test_*
+!/tests/json/test_parsing/
 /test
 verify_*
 

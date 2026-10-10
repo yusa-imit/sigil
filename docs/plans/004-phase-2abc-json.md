@@ -54,7 +54,7 @@ streaming) and 2E (path) build on this scanner and DOM, so they wait.
       (astral strings, number edges, nesting to 8); write minified and pretty, parse, compare
       with `eql`; seed logged via `std.log.err` on failure. Why: `REALM.md` makes round-trip a
       property, not a unit test. Verification: 1,000 seeds pass in `zig build test`.
-- [ ] **JSONTestSuite.** Vendor the MIT-licensed `test_parsing/` cases under `tests/json/`
+- [x] **JSONTestSuite.** Vendor the MIT-licensed `test_parsing/` cases under `tests/json/`
       with the license; every `y_` parses, every `n_` fails with a nonzero line:col, `i_`
       results are pinned so a change is visible. Why before a tag: the suite is the cheap,
       known catalog of the bugs a hand-written parser has. Verification: `zig build test`.
