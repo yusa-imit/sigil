@@ -10,8 +10,10 @@
 //! at the deepest value found, and malformed input yields an offset too. The offset is the first
 //! byte of the value, never of its key.
 //!
-//! Allocation: none. Cost: O(input), at most `depth_max` containers deep, one scan per segment
-//! of the parent it descends into.
+//! Allocation: none. Cost: at most `depth_max` containers deep, one scan per segment of the
+//! parent it descends into, so O(depth_max * input) in the worst case, not O(input). A key
+//! segment names the last matching source key, so a hook that parses under a synthetic key
+//! is located on a source key of the same name if one exists.
 
 const std = @import("std");
 const core = @import("../core.zig");

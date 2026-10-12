@@ -115,7 +115,9 @@ pub fn write_value(
 /// point at the first byte of the value its key path names (`MissingField` and `UnknownField`
 /// at the object's `{`), and the message stays reflect's. Result slices live until
 /// `tree.deinit()` and never borrow from `input`.
-/// Preconditions: `tree` was initialized; `1 <= options.depth_max <= nesting_max`.
+/// Preconditions: `tree` was initialized; `1 <= options.depth_max <= nesting_max`. A
+/// `sigilParse` hook must report failure through `Context.fail` and never write `diag` with a
+/// position itself: the position is filled in here from the key path.
 pub fn parse(
     comptime T: type,
     tree: *ValueTree,

@@ -14,8 +14,8 @@ with plan 004 (JSON).
 - `json.parse(T)`, `json.stringify`, `json.parse_value` and `json.write_value` (plan 004 item 8):
   the in-memory path is the DOM then `reflect.parse`, and `reflect.stringify` then the writer.
   A `reflect` failure is upgraded from a path to the source line:col by `scanner.locate`, which
-  re-scans the input along the `reflect.Path` within `depth_max`. `parse_traced` and
-  `Context.trace` carry the path; `json.StringifyOptions` is now the writer's.
+  re-scans the input along the `reflect.Path` within `depth_max`. `raw_eql`, `parse_traced`
+  and `Context.trace` carry the path; `json.StringifyOptions` is now the writer's.
 - `json/scanner.zig`: the pull tokenizer over one complete slice (plan 004 item 2) with
   object/array structure, literals, RFC 8259 numbers, `depth_max` nesting and line:col
   diagnostics.
