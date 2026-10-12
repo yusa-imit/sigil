@@ -9,9 +9,10 @@
 //!
 //! Failure contract: every error return writes `diag` exactly once and success never does. File
 //! system failures carry `position_none` and a message; a malformed file carries its line:col.
-//! The conversion in `stringifyFile` runs before the file is touched, so a value reflect cannot
-//! convert leaves an existing file as it was. A failure while writing leaves a partial file: the
-//! write is not atomic.
+//! The `reflect` conversion in `stringifyFile` runs before the file is touched, so a value
+//! reflect cannot convert leaves an existing file as it was. Failures of the writer itself
+//! (`Unrepresentable`, `TooDeep`, an I/O error) come after the file was created or truncated and
+//! leave it partial: the write is not atomic.
 //!
 //! std's OS error sets are not re-exported. The `map_*` functions collapse them by hand into the
 //! few names below; `OutOfMemory` and `Canceled` pass through because their meaning is canonical.

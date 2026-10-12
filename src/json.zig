@@ -170,7 +170,7 @@ pub fn stringify(
     return write_value(w, converted, options, diag);
 }
 
-/// Everything `parseFile` can return: `ParseError` plus file system names (26 variants).
+/// Everything `parseFile` can return: `ParseError` plus file system names (27 variants).
 pub const ParseFileError = file.ParseFileError;
 
 /// Everything `stringifyFile` can return: `StringifyError` plus file system names (10 variants).

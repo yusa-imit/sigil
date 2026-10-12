@@ -2,9 +2,9 @@
 //! real directory from `std.testing.tmpDir`, driven by `std.testing.io`. Golden file text is
 //! written by hand from the contract. Every `ParseFileError`/`StringifyFileError` name that the
 //! file layer adds is provoked: the ones a temp directory can cause (`FileNotFound`,
-//! `InputTooLarge`) through the file system, and the ones it cannot (`AccessDenied`,
-//! `ReadFailed`, `NoSpaceLeft`, `WriteFailed`, `Canceled`) through the pure std-error mapping
-//! tables. `diag` is written exactly once per error and never on success.
+//! `InputTooLarge`, `ReadFailed` on a directory, `WriteFailed` onto one) through the file system,
+//! and the ones it cannot (`AccessDenied`, `NoSpaceLeft`, `Canceled`) through the pure std-error
+//! mapping tables. `diag` is written exactly once per error and never on success.
 
 const std = @import("std");
 const core = @import("../core.zig");
@@ -150,7 +150,7 @@ test "json file: a malformed file reports line and column" {
     const result = parse_in(tmp.dir, arena_state.allocator(), "bad.json", parse_options, &diag);
     try testing.expect(std.meta.isError(result));
     try testing.expectEqual(@as(u32, 2), diag.line);
-    try testing.expect(diag.col >= 1);
+    try testing.expectEqual(@as(u32, 11), diag.col);
     try testing.expect(diag.message().len > 0);
 }
 
@@ -257,4 +257,86 @@ test "json file: write errors map to the documented names" {
     for (cases) |case| {
         try testing.expectEqual(case.mapped, file.map_write_error(case.std_error));
     }
+}
+
+test "json file: a directory is ReadFailed to read and WriteFailed to write" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    try tmp.dir.createDir(testing.io, "sub", .default_dir);
+    var diag = sentinel_diag();
+
+    const read = parse_in(tmp.dir, arena, "sub", parse_options, &diag);
+    try testing.expectError(error.ReadFailed, read);
+    try testing.expectEqual(position_none, diag.line);
+    try testing.expectEqualStrings("file could not be read", diag.message());
+
+    diag = sentinel_diag();
+    const value: Config = .{ .port = 1, .name = "a" };
+    const write = stringify_in(tmp.dir, arena, "sub", value, &diag);
+    try testing.expectError(error.WriteFailed, write);
+    try testing.expectEqual(position_none, diag.line);
+    try testing.expectEqualStrings("file could not be written", diag.message());
+}
+
+test "json file: parseFile runs out of arena memory as OutOfMemory" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try write_text(tmp.dir, "big.json", "{\"port\":7,\"name\":\"a long enough name\"}");
+    var buffer: [16]u8 = undefined;
+    var fixed = std.heap.FixedBufferAllocator.init(&buffer);
+    var diag = sentinel_diag();
+
+    const result = parse_in(tmp.dir, fixed.allocator(), "big.json", parse_options, &diag);
+    try testing.expectError(error.OutOfMemory, result);
+    try testing.expectEqual(position_none, diag.line);
+    try testing.expect(diag.message().len > 0);
+}
+
+test "json file: a writer-stage failure passes through and leaves a partial file" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var diag = sentinel_diag();
+    try write_text(tmp.dir, "deep.json", "previous contents");
+    const Nest = struct { inner: Config };
+    var options = minified;
+    options.depth_max = 1;
+
+    const value: Nest = .{ .inner = .{ .port = 1, .name = "a" } };
+    const arena = arena_state.allocator();
+    const path = "deep.json";
+    const result = json.stringifyFile(testing.io, arena, tmp.dir, path, value, options, &diag);
+    try testing.expectError(error.TooDeep, result);
+    try testing.expectEqual(position_none, diag.line);
+    try testing.expect(diag.message().len > 0);
+    const text = try read_text(tmp.dir, "deep.json", testing.allocator);
+    defer testing.allocator.free(text);
+    try testing.expect(!std.mem.eql(u8, "previous contents", text));
+}
+
+test "json file: an empty file and bytes_max of zero are rejected with a diagnostic" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    try write_text(tmp.dir, "empty.json", "");
+    try write_text(tmp.dir, "one.json", "1");
+    var diag = sentinel_diag();
+
+    const empty = parse_in(tmp.dir, arena, "empty.json", parse_options, &diag);
+    try testing.expect(std.meta.isError(empty));
+    try testing.expect(diag.message().len > 0);
+    try testing.expect(diag.line != sentinel_line);
+
+    diag = sentinel_diag();
+    var options = parse_options;
+    options.bytes_max = 0;
+    const zero = parse_in(tmp.dir, arena, "one.json", options, &diag);
+    try testing.expectError(error.InputTooLarge, zero);
+    try testing.expectEqual(position_none, diag.line);
 }
