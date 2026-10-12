@@ -11,6 +11,13 @@ with plan 004 (JSON).
 
 ### Added
 
+- `json.parseFile` and `json.stringifyFile` (plan 004 item 9, ADR 0003 section 9) in
+  `json/file.zig`: both take `arena` and a final `diag`; `bytes_max` gives `InputTooLarge`
+  (inclusive boundary); std's file errors are collapsed by hand into `FileNotFound`,
+  `AccessDenied`, `ReadFailed`, `NoSpaceLeft`, `WriteFailed` plus passed-through `Canceled` and
+  `OutOfMemory`. `stringifyFile` converts before it touches the file, then writes one trailing
+  newline. The `root.zig` parity test now pins 7 parameters. `json.Error` lost `NotImplemented`
+  and `scratch_bytes_min` is gone.
 - `json.parse(T)`, `json.stringify`, `json.parse_value` and `json.write_value` (plan 004 item 8):
   the in-memory path is the DOM then `reflect.parse`, and `reflect.stringify` then the writer.
   A `reflect` failure is upgraded from a path to the source line:col by `scanner.locate`, which

@@ -7,14 +7,14 @@
 //! reflect failure in the source: `diag` gets the line:col and snippet of the value the key path
 //! names, and keeps reflect's message. `stringify(T)` runs `reflect.stringify`, then the writer.
 //!
-//! Status: `parseFile`/`stringifyFile` are stubs that carry the file-shaped signature every
-//! format module implements identically — see `docs/adr/0001-io-convention.md`. The parity test
-//! in `src/root.zig` holds toml/yaml/msgpack/cbor/proto/csv to this exact shape when they add it.
+//! `parseFile`/`stringifyFile` (in `json/file.zig`) carry the file-shaped signature every format
+//! module implements identically — see ADR 0001 as amended by ADR 0003 section 9. The parity
+//! test in `src/root.zig` holds toml/yaml/msgpack/cbor/proto/csv to this exact shape.
 //!
 //! Ownership: every function allocates only from the `ValueTree` arena it is given (the writer
-//! allocates nothing). `parseFile` allocates only from the caller's `arena` and never frees.
-//! `stringifyFile` writes through the caller's `scratch`. No allocator and no `Io` is stored;
-//! sigil never constructs an `Io`. Every error return writes `diag` exactly once; success never.
+//! allocates nothing). `parseFile`/`stringifyFile` allocate only from the caller's `arena` and
+//! never free. No allocator and no `Io` is stored; sigil never constructs an `Io`. Every error
+//! return writes `diag` exactly once; success never.
 
 const std = @import("std");
 const Io = std.Io;
@@ -26,16 +26,14 @@ const reflect = @import("reflect.zig");
 pub const scanner = @import("json/scanner.zig");
 pub const dom = @import("json/dom.zig");
 pub const writer = @import("json/writer.zig");
+const file = @import("json/file.zig");
 
 const Diagnostics = core.Diagnostics;
 const Value = core.Value;
 const ValueTree = core.ValueTree;
 
-/// Module-level error set. Extend as functionality lands; keep names descriptive
-/// (`error.ChecksumMismatch`, not `error.Invalid`).
-pub const Error = error{
-    NotImplemented,
-};
+/// Module-level error set: everything any function of this module can return.
+pub const Error = file.ParseFileError || file.StringifyFileError;
 
 /// What to do when an object repeats a key.
 pub const DuplicateKeyPolicy = dom.DuplicateKeyPolicy;
@@ -172,88 +170,14 @@ pub fn stringify(
     return write_value(w, converted, options, diag);
 }
 
-/// `|| Error` is stub scaffolding, deleted when the module lands.
-pub const ParseFileError = error{
-    OutOfMemory,
-    Canceled,
-    FileNotFound,
-    AccessDenied,
-    ReadFailed,
-    InputTooLarge,
-    /// Malformed JSON; `Diagnostics` carries file:line:col once `core` lands.
-    ParseFailed,
-    DepthExceeded,
-    TypeMismatch,
-    MissingField,
-    UnknownField,
-    NumberOutOfRange,
-    InvalidUtf8,
-} || Error;
+/// Everything `parseFile` can return: `ParseError` plus file system names (26 variants).
+pub const ParseFileError = file.ParseFileError;
 
-/// `|| Error` is stub scaffolding, deleted when the module lands.
-pub const StringifyFileError = error{
-    Canceled,
-    AccessDenied,
-    NoSpaceLeft,
-    WriteFailed,
-    DepthExceeded,
-    /// `value` contains a type JSON cannot represent.
-    UnsupportedType,
-} || Error;
+/// Everything `stringifyFile` can return: `StringifyError` plus file system names (10 variants).
+pub const StringifyFileError = file.StringifyFileError;
 
-/// Reads `sub_path` under `dir` and parses it into `T`.
-///
-/// Parameter order is the kingdom convention (ADR-0001): `comptime T`, `io`, memory, subject,
-/// options. `dir` is explicit — sigil never calls `Io.Dir.cwd()` for the caller.
-///
-/// Preconditions: `sub_path` is non-empty; `options.depth_max > 0`.
-/// Ownership: allocations come from `arena` and are never freed by sigil; strings in the result
-/// borrow from it, so the result lives exactly as long as the arena.
-/// Status: returns `error.NotImplemented` until the module lands.
-pub fn parseFile(
-    comptime T: type,
-    io: Io,
-    arena: Allocator,
-    dir: Io.Dir,
-    sub_path: []const u8,
-    options: ParseOptions,
-) ParseFileError!T {
-    assert(sub_path.len > 0);
-    assert(options.depth_max > 0);
-    _ = io;
-    _ = arena;
-    _ = dir;
-    return error.NotImplemented;
-}
-
-/// Serializes `value` into `sub_path` under `dir`, streaming through `scratch`.
-///
-/// Parameter order is the kingdom convention (ADR-0001): with no comptime type parameter and no
-/// receiver, `io` is first; `scratch` is the memory slot; `dir`/`sub_path`/`value` are subject.
-///
-/// Preconditions: `sub_path` is non-empty; `scratch.len >= scratch_bytes_min`;
-/// `options.depth_max > 0`.
-/// Ownership: allocates nothing. The file is created or truncated.
-/// Status: returns `error.NotImplemented` until the module lands.
-pub fn stringifyFile(
-    io: Io,
-    scratch: []u8,
-    dir: Io.Dir,
-    sub_path: []const u8,
-    value: anytype,
-    options: StringifyOptions,
-) StringifyFileError!void {
-    assert(sub_path.len > 0);
-    assert(scratch.len >= scratch_bytes_min);
-    assert(options.depth_max > 0);
-    _ = io;
-    _ = dir;
-    _ = value;
-    return error.NotImplemented;
-}
-
-/// Smallest write buffer `stringifyFile` accepts: one maximal escaped scalar must fit.
-pub const scratch_bytes_min: u32 = 64;
+pub const parseFile = file.parseFile;
+pub const stringifyFile = file.stringifyFile;
 
 test "json: module compiles" {
     std.testing.refAllDecls(@This());
@@ -263,6 +187,7 @@ test {
     _ = @import("json/parse_test.zig");
     _ = @import("json/parse_error_test.zig");
     _ = @import("json/stringify_test.zig");
+    _ = file;
 }
 
 test "json: error sets have the variant counts of ADR 0003 section 3" {
@@ -311,27 +236,4 @@ test "json: StringifyError holds every reflect.StringifyError and WriteValueErro
     inline for (comptime names_of(WriteValueError)) |entry| {
         try std.testing.expect(has_name(StringifyError, entry.name));
     }
-}
-
-test "json: parseFile is driven by std.testing.io and is not implemented yet" {
-    const App = struct { port: u16 };
-    const result = parseFile(App, std.testing.io, std.testing.allocator, Io.Dir.cwd(), "a.json", .{
-        .depth_max = 128,
-        .bytes_max = 1 << 20,
-        .duplicate_key = .reject,
-    });
-    try std.testing.expectError(error.NotImplemented, result);
-}
-
-test "json: stringifyFile is driven by std.testing.io and is not implemented yet" {
-    var scratch: [scratch_bytes_min]u8 = @splat(0);
-    const result = stringifyFile(std.testing.io, &scratch, Io.Dir.cwd(), "app.json", .{
-        .port = @as(u16, 8080),
-    }, .{
-        .layout = .{ .pretty = .{ .indent_spaces = 2 } },
-        .sort_keys = false,
-        .escape = .minimal,
-        .depth_max = 128,
-    });
-    try std.testing.expectError(error.NotImplemented, result);
 }
