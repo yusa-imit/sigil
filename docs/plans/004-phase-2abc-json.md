@@ -58,7 +58,7 @@ streaming) and 2E (path) build on this scanner and DOM, so they wait.
       with the license; every `y_` parses, every `n_` fails with a nonzero line:col, `i_`
       results are pinned so a change is visible. Why before a tag: the suite is the cheap,
       known catalog of the bugs a hand-written parser has. Verification: `zig build test`.
-- [ ] **`json.parse(T)` and `json.stringify`.** In memory: DOM, then `reflect.parse`; and
+- [x] **`json.parse(T)` and `json.stringify`.** In memory: DOM, then `reflect.parse`; and
       `reflect.stringify`, then the writer. Reflect's path-only diagnostic is upgraded to
       line:col by re-scanning the input along `reflect.Path` (bounded by `depth_max`), as
       ADR 0002 promised. Tests: PRD §4.2 `Config` from JSON text; a `TypeMismatch` at
