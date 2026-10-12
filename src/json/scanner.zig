@@ -504,6 +504,36 @@ pub fn decode_string(raw: []const u8, out: []u8) []u8 {
     return out[0..written];
 }
 
+/// True when the decoded text of a `.key`/`.string` `raw` equals `key`, byte for byte. Nothing
+/// is allocated: escapes decode a step at a time against `key`. `has_escapes` is the token's
+/// flag; without it the answer is plain byte equality.
+/// Precondition: `raw` came from a token, so every escape in it is well formed.
+pub fn raw_eql(raw: []const u8, has_escapes: bool, key: []const u8) bool {
+    assert(raw.len <= std.math.maxInt(u32));
+    assert(has_escapes or std.mem.findScalar(u8, raw, '\\') == null);
+    if (!has_escapes) return std.mem.eql(u8, raw, key);
+    var read: usize = 0;
+    var matched: usize = 0;
+    for (0..raw.len) |_| {
+        if (read == raw.len) break;
+        if (matched == key.len) return false;
+        if (raw[read] != '\\') {
+            if (raw[read] != key[matched]) return false;
+            read += 1;
+            matched += 1;
+            continue;
+        }
+        var piece_buffer: [4]u8 = @splat(0);
+        const step = decode_escape(raw[read..], &piece_buffer);
+        const piece = piece_buffer[0..step.written_len];
+        if (!std.mem.startsWith(u8, key[matched..], piece)) return false;
+        read += step.read_len;
+        matched += step.written_len;
+    }
+    assert(read == raw.len);
+    return matched == key.len;
+}
+
 /// How many bytes one escape consumed from `raw` and produced into `out`.
 const EscapeStep = struct { read_len: u8, written_len: u8 };
 
@@ -589,7 +619,12 @@ fn skip_digits(run: []const u8, start: usize) ?usize {
     return index;
 }
 
+/// The offset of the value a `reflect.Path` names, found by walking a `Scanner` along it.
+pub const locate = @import("locate.zig").locate;
+
 test {
     _ = @import("scanner_test.zig");
     _ = @import("scanner_string_test.zig");
+    _ = @import("raw_eql_test.zig");
+    _ = @import("locate_test.zig");
 }

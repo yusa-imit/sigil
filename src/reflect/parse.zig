@@ -54,6 +54,29 @@ pub fn parse(
     return parse_value(T, &context, value);
 }
 
+/// `parse` that also tells where it failed: on error `trace` holds a copy of the key path at the
+/// first diagnostic write (the failing value, or the struct for `MissingField`/`UnknownField`),
+/// so a format layer can find the spot in its source. On success `trace` is left empty.
+/// Precondition: `trace` is a valid `Path`; its old content is discarded.
+pub fn parse_traced(
+    comptime T: type,
+    tree: *ValueTree,
+    value: Value,
+    diag: *Diagnostics,
+    trace: *Path,
+) ParseError!T {
+    trace.init();
+    var path: Path = undefined;
+    path.init();
+    var context: Context = undefined;
+    context.init(tree, diag, &path);
+    context.trace = trace;
+    assert(context.depth == 0);
+    assert(!context.diag_written);
+    errdefer assert(context.diag_written);
+    return parse_value(T, &context, value);
+}
+
 /// The same parse under a caller's `Context`: the path and the depth continue where they are.
 /// Does not push a path segment of its own; `Context.parse_child` does.
 /// Precondition: `context.path.count <= context.depth <= nesting_max`.
@@ -515,4 +538,5 @@ test {
     _ = @import("parse_union_test.zig");
     _ = @import("parse_map_test.zig");
     _ = @import("parse_hook_test.zig");
+    _ = @import("parse_trace_test.zig");
 }

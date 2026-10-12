@@ -86,6 +86,9 @@ pub const Context = struct {
     depth: u32,
     /// True once `diag` holds this call's message; reflect then does not write a fallback.
     diag_written: bool,
+    /// Null from `parse`. `parse_traced` sets it: the first message write copies the live path
+    /// into it, because `parse_child` unwinds `path` on the way out (ADR 0003 section 8).
+    trace: ?*Path,
 
     /// Initializes `context` in place: depth 0, nothing written.
     /// Precondition: `path` is empty.
@@ -98,6 +101,7 @@ pub const Context = struct {
             .path = path,
             .depth = 0,
             .diag_written = false,
+            .trace = null,
         };
         assert(context.depth == 0);
     }
@@ -135,6 +139,9 @@ pub const Context = struct {
         assert(context.path.count <= context.depth);
         assert(context.depth <= nesting_max);
         write_diagnostic(context.diag, context.path, format, args);
+        if (context.trace) |trace| {
+            if (!context.diag_written) copy_path(trace, context.path);
+        }
         context.diag_written = true;
     }
 
@@ -192,6 +199,16 @@ pub const Context = struct {
         context.depth -= 1;
     }
 };
+
+/// Makes `target` a snapshot of the live segments of `source`; the old content is replaced.
+/// Precondition: `target` and `source` are distinct paths with `source.count <= nesting_max`.
+fn copy_path(target: *Path, source: *const Path) void {
+    assert(source.count <= nesting_max);
+    assert(target != source);
+    target.count = source.count;
+    @memcpy(target.segments[0..source.count], source.segments[0..source.count]);
+    assert(target.count == source.count);
+}
 
 /// Writes `"{path}: {reason}"` to `diag` at `position_none`; the body of `Context.fail`, public so
 /// a writer that has no `Context` (json/writer.zig) uses the same path grammar and the same cuts.
