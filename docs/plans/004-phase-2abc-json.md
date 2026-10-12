@@ -63,7 +63,7 @@ streaming) and 2E (path) build on this scanner and DOM, so they wait.
       line:col by re-scanning the input along `reflect.Path` (bounded by `depth_max`), as
       ADR 0002 promised. Tests: PRD §4.2 `Config` from JSON text; a `TypeMismatch` at
       `servers[2].host` and an `UnknownField` each report the source line:col.
-- [ ] **`parseFile`/`stringifyFile`.** Implement the ADR 0001 shapes over the item above with
+- [x] **`parseFile`/`stringifyFile`.** Implement the ADR 0001 shapes over the item above with
       the hand-written I/O error mapping; `bytes_max` gives `InputTooLarge`; `json.zig` loses
       `|| Error`. Tests on `std.testing.tmpDir` with `std.testing.io`: file round trip,
       missing file, oversize file, malformed file with line:col; the `root.zig` parity test
