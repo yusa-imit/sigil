@@ -259,6 +259,8 @@ test "json: module compiles" {
 
 test {
     _ = @import("json/parse_test.zig");
+    _ = @import("json/parse_error_test.zig");
+    _ = @import("json/stringify_test.zig");
 }
 
 test "json: error sets have the variant counts of ADR 0003 section 3" {
