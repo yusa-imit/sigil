@@ -68,7 +68,7 @@ streaming) and 2E (path) build on this scanner and DOM, so they wait.
       `|| Error`. Tests on `std.testing.tmpDir` with `std.testing.io`: file round trip,
       missing file, oversize file, malformed file with line:col; the `root.zig` parity test
       still passes.
-- [ ] **Benchmarks.** Port `bench/main.zig` to 0.16 first: it still calls
+- [x] **Benchmarks.** Port `bench/main.zig` to 0.16 first: it still calls
       `GeneralPurposeAllocator`, `argsAlloc`, `std.fs` and `std.time.Timer`, and nothing builds
       it, so CI never noticed. Add a CI step that builds `bench`. Benchmarks: DOM parse, writer,
       `parse(T)` on a seeded 1 MiB document (no vendored twitter.json), plus arena bytes per

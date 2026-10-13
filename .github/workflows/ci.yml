@@ -38,6 +38,8 @@ jobs:
         run: zig build
       - name: Test
         run: zig build test
+      - name: Bench
+        run: zig build bench
 
   cross-compile:
     name: Cross-compile (${{ matrix.target }})
