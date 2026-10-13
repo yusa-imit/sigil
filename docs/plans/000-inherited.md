@@ -20,9 +20,9 @@
 
 ## Phase 2 — JSON
 
-- [ ] 2A `json/scanner.zig`
-- [ ] 2B `json/dom.zig`
-- [ ] 2C `json/writer.zig`
+- [x] 2A `json/scanner.zig`
+- [x] 2B `json/dom.zig`
+- [x] 2C `json/writer.zig`
 - [ ] 2D `json/reflect.zig` — streaming to struct
 - [ ] 2E `path/{pointer,jsonpath,patch,merge}.zig`
 - [ ] 2F fuzz + JSONTestSuite

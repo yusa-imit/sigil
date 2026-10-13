@@ -74,7 +74,7 @@ streaming) and 2E (path) build on this scanner and DOM, so they wait.
       `parse(T)` on a seeded 1 MiB document (no vendored twitter.json), plus arena bytes per
       input byte. Record MB/s in `docs/plans/000-inherited.md`. Verification: `zig build bench
       -Doptimize=ReleaseFast` prints all three.
-- [ ] **Release v0.3.0.** ADR 0001 forbids `NotImplemented` in a tagged API, so drop the
+- [x] **Release v0.3.0.** ADR 0001 forbids `NotImplemented` in a tagged API, so drop the
       `config.load`/`Watcher` stubs (their signatures stay in ADR 0001; Phase 5 restores them).
       Tick 2A-2C in `000-inherited.md` and plan 003 item 4 (done in PR #31, box missed).
       `CHANGELOG.md` `[0.3.0]`, `build.zig.zon` 0.2.0 -> 0.3.0 in the same PR; after merge,

@@ -7,7 +7,7 @@
 
 const std = @import("std");
 
-pub const version = std.SemanticVersion{ .major = 0, .minor = 2, .patch = 0 };
+pub const version = std.SemanticVersion{ .major = 0, .minor = 3, .patch = 0 };
 
 comptime {
     // REALM.md's release quirk: 0.x means "nothing shippable yet" (Phase 1
@@ -36,11 +36,19 @@ test {
     std.testing.refAllDecls(@This());
 }
 
-test "version: library constant is 0.2.0 (plan 001 item 11)" {
+test "version: library constant is 0.3.0 (plan 004 item 11)" {
     // Pins the version bump so a partial edit (constant without manifest, or vice
     // versa) fails loudly instead of silently drifting.
-    try std.testing.expectEqual(@as(u32, 2), version.minor);
+    try std.testing.expectEqual(@as(u32, 3), version.minor);
     try std.testing.expectEqual(@as(u32, 0), version.patch);
+}
+
+test "release: no tagged module exposes a NotImplemented entry point" {
+    // ADR 0001 forbids `error.NotImplemented` in a tagged API: the `config` stubs were
+    // dropped for v0.3.0 and return in Phase 5 with their real implementation.
+    try std.testing.expect(!@hasDecl(config, "load"));
+    try std.testing.expect(!@hasDecl(config, "Watcher"));
+    try std.testing.expect(!@hasDecl(config, "LoadError"));
 }
 
 test "io convention: every format module puts `io` in the same parameter slot" {

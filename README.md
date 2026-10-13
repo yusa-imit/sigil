@@ -10,14 +10,14 @@ sigil은 하나의 `Value` 중간 표현과 comptime 리플렉션(struct ↔ Val
 
 ---
 
-## Status: Phase 1 done (`core`, `reflect`); every format module is still a stub
+## Status: `core`, `reflect` and `json` are implemented; other formats are stubs
 
-`sigil.core` and `sigil.reflect` are implemented and tested (parse and stringify between Zig
-types and `Value`, with a seeded round-trip property test). Every other module in the table
-below is a **signature stub**: it declares its planned public shape and error set, but its
-entry points return `error.NotImplemented`. No format (JSON, TOML, ...) can be read or written
-yet; JSON is next (`docs/plans/`). `docs/PRD.md` has the full design. The API is unstable and
-may change before the first tag.
+`sigil.core`, `sigil.reflect` and `sigil.json` are implemented and tested: parse and stringify
+between Zig types and `Value`, and read and write JSON with line:col diagnostics (JSONTestSuite,
+a seeded round-trip property, benchmarks in `docs/plans/000-inherited.md`). Every other module
+in the table below is an empty stub that declares only its error set; no TOML, YAML, MessagePack,
+CBOR, Protobuf or CSV can be read or written yet. `docs/PRD.md` has the full design. The API is
+unstable and may change between 0.x minors.
 
 ## Modules
 
@@ -25,7 +25,7 @@ may change before the first tag.
 |---|---|---|
 | `sigil.core` | Implemented | Value union, arena-owned ValueTree, decimal Number parsing, Timestamp, Diagnostics (line:col), strict UTF-8 validation and escape primitives. |
 | `sigil.reflect` | Implemented (`Schema(T)` planned) | comptime struct ↔ Value mapping: parse(T), stringify(T), field options (rename, defaults, deny_unknown), custom hooks. Schema(T) validation is not built yet. |
-| `sigil.json` | Planned (signature stub) | RFC 8259 pull scanner, DOM builder, pretty/minify writer, direct-to-struct streaming parse. `parseFile`/`stringifyFile` carry their final `io: Io` shape already — see `docs/adr/0001-io-convention.md`. |
+| `sigil.json` | Implemented | RFC 8259 strict pull scanner, DOM builder, minified/pretty writer, `parse(T)`/`stringify`, `parseFile`/`stringifyFile` with line:col diagnostics. Direct-to-struct streaming parse is not built yet. |
 | `sigil.path` | Planned | JSON Pointer (RFC 6901), JSONPath (RFC 9535 subset), JSON Patch (RFC 6902), Merge Patch (RFC 7386) — all over Value. |
 | `sigil.toml` | Planned | TOML v1.0.0 lexer, parser, writer (order-preserving). toml-test suite. |
 | `sigil.yaml` | Planned | YAML 1.2 core-schema subset: block/flow collections, scalars, anchors/aliases (bounded), multi-doc. |
@@ -33,13 +33,12 @@ may change before the first tag.
 | `sigil.cbor` | Planned | CBOR (RFC 8949) core + tags 0–3, deterministic encoding option. |
 | `sigil.proto` | Planned | Protobuf wire format (varint/64/len/32) with comptime field-number mapping — no schema compiler. |
 | `sigil.csv` | Planned | RFC 4180 reader/writer, configurable delimiter/quote, header → struct mapping. |
-| `sigil.config` | Planned (signature stub) | Layered config: defaults < files < env < args; schema validation; poll-based `Watcher`. `load`/`Watcher` carry their final `io: Io` shape already — see `docs/adr/0001-io-convention.md`. |
+| `sigil.config` | Planned | Layered config: defaults < files < env < args; schema validation; poll-based `Watcher`. The final `io: Io` signatures are in `docs/adr/0001-io-convention.md`; no code ships until Phase 5. |
 
 ## Install
 
-No tag has been cut yet — no format module exists, so a `zig fetch` today would hand you
-`Value` and reflection with nothing to read or write. The first tag lands once `json` is real;
-the snippet below is the shape consumers will use once a release exists:
+The latest tag is v0.3.0. Fetch it with `zig fetch --save <release tarball URL>` from the
+[releases page](https://github.com/yusa-imit/sigil/releases), then:
 
 ```zig
 // build.zig

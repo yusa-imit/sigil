@@ -6,8 +6,17 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
-Plans 002 and 003 (Phase 1A-1D: `core/` and `reflect/`) are implemented; the first tag lands
-with plan 004 (JSON).
+## [0.3.0] - 2026-10-14
+
+Plan 004 (Phase 2A-2C, JSON) and the first tag. Plans 002 and 003 (Phase 1A-1D: `core/` and
+`reflect/`) are included. A `zig fetch` now gives a consumer `Value`, reflection, and a working
+JSON reader and writer; every other format module is still an empty stub.
+
+### Removed
+
+- `sigil.config.load`, `Watcher` and their option and error types: ADR 0001 forbids
+  `error.NotImplemented` in a tagged API. Their final signatures stay in
+  `docs/adr/0001-io-convention.md`; Phase 5 restores them with an implementation.
 
 ### Added
 
