@@ -40,7 +40,7 @@ consumer in `REALM.md` loads configs into structs), and Phase 2D reuses its opti
       format layer upgrades in Phase 2; (c) int into float only when exact, float into int
       never, narrowing is `IntegerOutOfRange`; (d) tagged-union and `?T` null shape. PRD §4.2
       is amended in the same PR. Verification: `docs/adr/0002-reflect-contract.md` exists.
-- [ ] **`reflect/options.zig`.** Reads `T.sigil_options` at comptime (`rename`, `rename_all`,
+- [x] **`reflect/options.zig`.** Reads `T.sigil_options` at comptime (`rename`, `rename_all`,
       `deny_unknown_fields`) into a comptime field table (Zig name, wire name, default). An
       unknown option key, a `rename` of a missing field, or two fields on one wire name is a
       `@compileError`, never a runtime surprise. Tests: resolved tables for sample structs;
