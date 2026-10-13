@@ -1,8 +1,10 @@
 //! sigil benchmark harness. Run: `zig build bench -- [filter]`
 //! Each benchmark prints `name  MB/s  arena bytes per input byte` so the numbers can be pasted
 //! into docs/plans/. One seeded JSON document of about 1 MiB is generated once and shared by
-//! every benchmark; no corpus is vendored. Timing covers only the measured loop, never the
-//! document generation. Allocation: `gpa` is `init.gpa`; every benchmark frees what it takes.
+//! every benchmark; no corpus is vendored. Each benchmark runs one untimed warm-up pass, then
+//! the timed loop (parse benchmarks include tree init and teardown); document generation is
+//! never timed. Arena bytes are the arena capacity of one iteration, slack included.
+//! Allocation: `gpa` is `init.gpa`; every benchmark frees what it takes.
 const std = @import("std");
 const sigil = @import("sigil");
 const assert = std.debug.assert;
@@ -100,7 +102,8 @@ fn bench_dom_parse(gpa: Allocator, io: std.Io, document: []const u8) BenchError!
     const arena_bytes = try dom_parse_once(gpa, document); // Warm-up: pages and caches.
     const start = std.Io.Clock.awake.now(io);
     for (0..iterations) |_| {
-        assert(try dom_parse_once(gpa, document) == arena_bytes);
+        const got = try dom_parse_once(gpa, document);
+        assert(got == arena_bytes);
     }
     return .{
         .bytes_total = @as(u64, iterations) * document.len,
@@ -131,26 +134,36 @@ fn bench_write(gpa: Allocator, io: std.Io, document: []const u8) BenchError!Resu
     const root = sigil.json.parse_value(&tree, document, parse_options, &diag) catch |err| {
         return fail_parse(err);
     };
+    const output_bytes = try write_once(root, &diag); // Warm-up: caches.
     var bytes_total: u64 = 0;
     const start = std.Io.Clock.awake.now(io);
     for (0..iterations) |_| {
-        var buffer: [4096]u8 = undefined;
-        var sink = std.Io.Writer.Discarding.init(&buffer);
-        sigil.json.write_value(&sink.writer, root, stringify_options, &diag) catch {
-            return error.BenchFailed;
-        };
-        bytes_total += sink.fullCount();
+        const got = try write_once(root, &diag);
+        assert(got == output_bytes);
+        bytes_total += got;
     }
     const elapsed_ns = elapsed_ns_since(io, start);
     assert(bytes_total > 0);
     return .{ .bytes_total = bytes_total, .elapsed_ns = elapsed_ns, .arena_bytes = 0 };
 }
 
+/// Writes `root` minified into a discarding sink and returns the output length.
+fn write_once(root: sigil.core.Value, diag: *sigil.core.Diagnostics) BenchError!u64 {
+    var buffer: [4096]u8 = undefined;
+    var sink = std.Io.Writer.Discarding.init(&buffer);
+    sigil.json.write_value(&sink.writer, root, stringify_options, diag) catch |err| {
+        std.log.err("bench: write failed: {s}: {s}", .{ @errorName(err), diag.message() });
+        return error.BenchFailed;
+    };
+    return sink.fullCount();
+}
+
 fn bench_parse_typed(gpa: Allocator, io: std.Io, document: []const u8) BenchError!Result {
     const arena_bytes = try parse_typed_once(gpa, document); // Warm-up: pages and caches.
     const start = std.Io.Clock.awake.now(io);
     for (0..iterations) |_| {
-        assert(try parse_typed_once(gpa, document) == arena_bytes);
+        const got = try parse_typed_once(gpa, document);
+        assert(got == arena_bytes);
     }
     return .{
         .bytes_total = @as(u64, iterations) * document.len,
@@ -166,7 +179,8 @@ fn parse_typed_once(gpa: Allocator, document: []const u8) BenchError!u64 {
     defer tree.deinit();
 
     var diag = sigil.core.Diagnostics.init(0, 0, "", null);
-    const parsed = sigil.json.parse(Document, &tree, document, parse_options, &diag) catch {
+    const parsed = sigil.json.parse(Document, &tree, document, parse_options, &diag) catch |err| {
+        std.log.err("bench: parse(T) failed: {s}: {s}", .{ @errorName(err), diag.message() });
         return error.BenchFailed;
     };
     assert(parsed.records.len > 0);
@@ -174,6 +188,7 @@ fn parse_typed_once(gpa: Allocator, document: []const u8) BenchError!u64 {
 }
 
 fn fail_parse(err: sigil.json.ParseValueError) BenchError {
+    std.log.err("bench: parse failed: {s}", .{@errorName(err)});
     return switch (err) {
         error.OutOfMemory => error.OutOfMemory,
         else => error.BenchFailed, // The generated document is valid; any other error is a bug.
@@ -208,25 +223,29 @@ const record_count_max: u32 = 1 << 16;
 
 fn write_record(w: *std.Io.Writer, random: std.Random, index: u32) std.Io.Writer.Error!void {
     const words = [_][]const u8{ "alpha", "bravo", "charlie", "delta", "echo", "foxtrot" };
+    // Every draw is a named local, in a fixed order, so the byte stream never depends on the
+    // evaluation order of call arguments.
     const name = words[random.uintLessThan(usize, words.len)];
+    const suffix = random.uintLessThan(u32, 1000);
     const score = @as(f64, @floatFromInt(random.uintLessThan(u32, 100_000))) / 100.0;
+    const active = random.boolean();
     try w.print("{{\"id\":{d},\"name\":\"{s}-{d}\",\"score\":{d:.2},\"active\":{s},", .{
         index,
         name,
-        random.uintLessThan(u32, 1000),
+        suffix,
         score,
-        if (random.boolean()) "true" else "false",
+        if (active) "true" else "false",
     });
     try w.writeAll("\"tags\":[");
     const tag_count = random.uintLessThan(usize, 4);
     for (0..tag_count) |tag_index| {
+        const tag = words[random.uintLessThan(usize, words.len)];
         if (tag_index > 0) try w.writeByte(',');
-        try w.print("\"{s}\"", .{words[random.uintLessThan(usize, words.len)]});
+        try w.print("\"{s}\"", .{tag});
     }
-    try w.print("],\"owner\":{{\"x\":{d},\"y\":{d}}}}}", .{
-        random.intRangeAtMost(i32, -100_000, 100_000),
-        random.intRangeAtMost(i32, -100_000, 100_000),
-    });
+    const x = random.intRangeAtMost(i32, -100_000, 100_000);
+    const y = random.intRangeAtMost(i32, -100_000, 100_000);
+    try w.print("],\"owner\":{{\"x\":{d},\"y\":{d}}}}}", .{ x, y });
 }
 
 /// Nanoseconds from `start` to now on the awake clock; the clock never runs backwards.
@@ -273,12 +292,15 @@ test "bench: the generated document is deterministic, valid, and long enough" {
     try std.testing.expect(std.json.validate(std.testing.allocator, first) catch false);
 }
 
-test "bench: each benchmark runs once over the generated document" {
+test "bench: each benchmark measures bytes and time over the generated document" {
     const document = try generate_document(std.testing.allocator, document_seed);
     defer std.testing.allocator.free(document);
 
     for (benches) |bench| {
         const result = try bench.run(std.testing.allocator, std.testing.io, document);
         try std.testing.expect(result.bytes_total > 0);
+        try std.testing.expect(result.elapsed_ns > 0);
+        const has_arena = !std.mem.eql(u8, bench.name, "json.write.minified");
+        try std.testing.expectEqual(has_arena, result.arena_bytes > 0);
     }
 }
