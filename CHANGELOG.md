@@ -11,6 +11,9 @@ with plan 004 (JSON).
 
 ### Added
 
+- JSON benchmarks (plan 004 item 10): `zig build bench` generates one seeded ~1 MiB document and
+  prints MB/s for `json.dom.parse`, `json.write.minified` and `json.parse(T)` plus arena bytes
+  per input byte; CI now runs the step. Numbers are recorded in `docs/plans/000-inherited.md`.
 - `json.parseFile` and `json.stringifyFile` (plan 004 item 9, ADR 0003 section 9) in
   `json/file.zig`: both take `arena` and a final `diag`; `bytes_max` gives `InputTooLarge`
   (inclusive boundary); std's file errors are collapsed by hand into `FileNotFound`,
