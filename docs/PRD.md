@@ -129,6 +129,11 @@ try sigil.json.stringify(Config, &tree, &writer, cfg, stringify_options, &diag);
 - JSONPath (RFC 9535 서브셋: 자식, 재귀, 와일드카드, 슬라이스, 필터 표현식) — zoltraak JSON.GET 요구
 - JSON Pointer (RFC 6901), JSON Patch (RFC 6902), Merge Patch (RFC 7386)
 - `Value` 위에서 동작하므로 TOML/YAML 트리에도 그대로 적용
+- 계약 전체는 `docs/adr/0004-path-contract.md`: 읽기(`resolve`/`select`)는 무할당이며 트리 안을
+  가리키는 `*const Value`를 돌려주고, 변경(Merge Patch/Patch)은 `ValueTree`를 받아 경로 복사 후
+  루트를 한 번 교체(실패하면 루트 불변, 가비지는 `deinit`까지 유지). JSONPath는
+  `compile`(고정 한도 `Program`) + `select`(호출자 버퍼, `OutOfSpace`). `match`/`search`
+  (I-Regexp)는 `UnsupportedFunction`. 깊이는 `nesting_max`(128), 초과 시 `TooDeep`
 
 ### 4.5 `config`
 
