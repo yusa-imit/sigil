@@ -35,7 +35,16 @@ fn expect_parse_fail(text: []const u8, err: pointer.ParseError, col: u32) !void 
     try std.testing.expectError(err, pointer.parse(text, &buffer, &diag));
     try expectEqual(@as(u32, 1), diag.line);
     try expectEqual(col, diag.col);
-    try expect(diag.message().len > 0);
+    const message = diag.message();
+    const known = [_][]const u8{
+        pointer.start_message,
+        pointer.tilde_message,
+        pointer.depth_message,
+    };
+    var matched = false;
+    for (known) |expected| matched = matched or std.mem.eql(u8, message, expected);
+    try expect(matched);
+    try expectEqualStrings(core.diagnostics.snippet_of(text, col - 1), diag.snippet_text().?);
 }
 
 /// The document of RFC 6901 section 5.
@@ -116,6 +125,22 @@ test "pointer: resolve is null for every way a pointer can name nothing" {
     try expect_absent(root, "/a/b"); // `a/b` is one key; `a` is absent.
 }
 
+test "pointer: a map key named like the end marker or an index resolves as a key" {
+    var tree: ValueTree = undefined;
+    tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    var map = try tree.new_map(3);
+    try map.put("-", .{ .int = 1 });
+    try map.put("0", .{ .int = 2 });
+    try map.put("01", .{ .int = 3 });
+    tree.root = .{ .map = map };
+
+    try expect_resolves_to(&tree.root, "/-", .{ .int = 1 });
+    try expect_resolves_to(&tree.root, "/0", .{ .int = 2 });
+    try expect_resolves_to(&tree.root, "/01", .{ .int = 3 });
+}
+
 test "pointer: resolve finds array elements, nested containers and null values" {
     var tree: ValueTree = undefined;
     tree.init(std.testing.allocator);
@@ -164,6 +189,7 @@ test "pointer: parse rejects bad text with a byte column" {
     try expect_parse_fail("/ab/c~x/d", error.InvalidPointer, 6);
     try expect_parse_fail("/~~0", error.InvalidPointer, 2);
     try expect_parse_fail("/\xc3\xa9~", error.InvalidPointer, 4); // Columns count bytes.
+    try expect_parse_fail("/a~/b", error.InvalidPointer, 3);
 }
 
 test "pointer: segments_max is accepted and one more is TooDeep at its slash" {
@@ -217,6 +243,7 @@ test "pointer: index_of follows the RFC grammar" {
     try expectEqual(@as(?u32, null), pointer.index_of("1e3"));
     try expectEqual(@as(?u32, null), pointer.index_of("0x1"));
     try expectEqual(@as(?u32, null), pointer.index_of("12345678901"));
+    try expectEqual(@as(?u32, null), pointer.index_of("0000000001"));
 }
 
 test "pointer: segment_eql decodes on the fly and rejects prefixes" {
@@ -270,83 +297,117 @@ fn naive_decode(raw: []const u8, out: []u8) []const u8 {
     return out[0..len];
 }
 
+const depth_max = 6;
+const key_len_max = 4;
+
+const Generated = struct {
+    keys: [depth_max][key_len_max]u8,
+    key_lens: [depth_max]usize,
+    depth: usize,
+
+    fn key(generated: *const Generated, level: usize) []const u8 {
+        return generated.keys[level][0..generated.key_lens[level]];
+    }
+};
+
+fn generate_keys(random: std.Random) Generated {
+    var generated: Generated = .{ .keys = undefined, .key_lens = undefined, .depth = 0 };
+    generated.depth = random.intRangeAtMost(usize, 1, depth_max);
+    for (0..generated.depth) |level| {
+        generated.key_lens[level] = random.intRangeAtMost(usize, 0, key_len_max);
+        for (0..generated.key_lens[level]) |at| {
+            generated.keys[level][at] = alphabet[random.uintLessThan(usize, alphabet.len)];
+        }
+    }
+    return generated;
+}
+
+/// Builds the nested document inside out; each map holds a `key ++ "x"` decoy before the real
+/// key, so a prefix-matching comparison would find the decoy.
+fn build_document(tree: *ValueTree, generated: *const Generated, leaf: Value) !Value {
+    var node = leaf;
+    var level = generated.depth;
+    while (level > 0) {
+        level -= 1;
+        const key = generated.key(level);
+        const decoy = try std.mem.concat(tree.arena.allocator(), u8, &.{ key, "x" });
+        var map = try tree.new_map(2);
+        try map.put(decoy, .null);
+        try map.put(try tree.dupe_key(key), node);
+        node = .{ .map = map };
+    }
+    return node;
+}
+
+/// Writes the escaped pointer text for `generated` into `out`, returning the filled prefix.
+fn build_text(generated: *const Generated, out: []u8) []const u8 {
+    var len: usize = 0;
+    for (0..generated.depth) |level| {
+        out[len] = '/';
+        len += 1;
+        len += escape_key(generated.key(level), out[len..]).len;
+    }
+    return out[0..len];
+}
+
+/// Parses `text ++ suffix` and resolves it against `root`.
+fn resolve_with_suffix(root: *const Value, text: []const u8, suffix: []const u8) !?*const Value {
+    var longer: [128]u8 = undefined;
+    @memcpy(longer[0..text.len], text);
+    @memcpy(longer[text.len..][0..suffix.len], suffix);
+    var buffer: [pointer.segments_max]Segment = undefined;
+    const parsed = try parse_ok(longer[0 .. text.len + suffix.len], &buffer);
+    return pointer.resolve(root, parsed);
+}
+
 test "pointer: model against a naive splitter over 1,000 seeds" {
-    const depth_max = 6;
-    const key_len_max = 4;
-    var tally_present: u32 = 0;
+    var tally_depth_max: u32 = 0;
+    var tally_empty_key: u32 = 0;
 
     for (0..1000) |seed| {
         var prng = std.Random.DefaultPrng.init(seed);
-        const random = prng.random();
+        const generated = generate_keys(prng.random());
+        if (generated.depth == depth_max) tally_depth_max += 1;
+        for (0..generated.depth) |level| {
+            if (generated.key_lens[level] == 0) tally_empty_key += 1;
+        }
 
         var tree: ValueTree = undefined;
         tree.init(std.testing.allocator);
         defer tree.deinit();
+        tree.root = try build_document(&tree, &generated, .{ .int = @intCast(seed) });
 
-        var keys: [depth_max][key_len_max]u8 = undefined;
-        var key_lens: [depth_max]usize = undefined;
-        const depth = random.intRangeAtMost(usize, 1, depth_max);
-        for (0..depth) |level| {
-            key_lens[level] = random.intRangeAtMost(usize, 0, key_len_max);
-            for (0..key_lens[level]) |at| keys[level][at] = alphabet[random.uintLessThan(usize, 5)];
-        }
-
-        // Build the nested document inside out; each map also holds a `key ++ "x"` decoy.
-        var node: Value = .{ .int = @intCast(seed) };
-        var level = depth;
-        while (level > 0) {
-            level -= 1;
-            const key = keys[level][0..key_lens[level]];
-            const decoy = try std.mem.concat(tree.arena.allocator(), u8, &.{ key, "x" });
-            var map = try tree.new_map(2);
-            try map.put(try tree.dupe_key(key), node);
-            try map.put(decoy, .null);
-            node = .{ .map = map };
-        }
-        tree.root = node;
-
-        var text_buffer: [depth_max * (1 + 2 * key_len_max) + 8]u8 = undefined;
-        var text_len: usize = 0;
-        for (0..depth) |at| {
-            text_buffer[text_len] = '/';
-            text_len += 1;
-            var escaped: [2 * key_len_max]u8 = undefined;
-            const piece = escape_key(keys[at][0..key_lens[at]], &escaped);
-            @memcpy(text_buffer[text_len..][0..piece.len], piece);
-            text_len += piece.len;
-        }
-        const text = text_buffer[0..text_len];
-
+        var text_buffer: [depth_max * (1 + 2 * key_len_max)]u8 = undefined;
+        const text = build_text(&generated, &text_buffer);
         var buffer: [pointer.segments_max]Segment = undefined;
         const parsed = try parse_ok(text, &buffer);
+        try expectEqual(generated.depth, parsed.segments.len);
 
         // The naive splitter: cut on '/', decode, compare with the generated keys.
         var split = std.mem.splitScalar(u8, text[1..], '/');
         var at: usize = 0;
         while (split.next()) |raw| : (at += 1) {
             var decoded: [key_len_max]u8 = undefined;
-            try expectEqualStrings(keys[at][0..key_lens[at]], naive_decode(raw, &decoded));
+            try expectEqualStrings(generated.key(at), naive_decode(raw, &decoded));
             try expectEqualStrings(raw, parsed.segments[at].raw);
-            try expect(pointer.segment_eql(raw, keys[at][0..key_lens[at]]));
+            try expect(pointer.segment_eql(raw, generated.key(at)));
         }
-        try expectEqual(depth, at);
-        try expectEqual(depth, parsed.segments.len);
+        try expectEqual(generated.depth, at);
 
         const found = pointer.resolve(&tree.root, parsed) orelse return error.TestUnexpectedResult;
         try expectEqual(@as(i64, @intCast(seed)), found.int);
-        tally_present += 1;
 
-        // Going one segment further hits a scalar; a sibling key that is absent finds nothing.
-        var longer: [text_buffer.len + 2]u8 = undefined;
-        @memcpy(longer[0..text.len], text);
-        longer[text.len..][0..2].* = "/z".*;
-        const beyond = try parse_ok(longer[0 .. text.len + 2], &buffer);
-        try expect(pointer.resolve(&tree.root, beyond) == null);
+        // Past a scalar leaf, and a sibling key that is absent (`y` is neither key nor decoy).
+        try expect(try resolve_with_suffix(&tree.root, text, "/z") == null);
+        const last_start = std.mem.findScalarLast(u8, text, '/').?;
+        try expect(try resolve_with_suffix(&tree.root, text[0..last_start], "/y") == null);
 
         var out: [text_buffer.len]u8 = undefined;
         var w = std.Io.Writer.fixed(&out);
         try pointer.format(parsed, &w);
         try expectEqualStrings(text, w.buffered());
     }
-    try expectEqual(@as(u32, 1000), tally_present);
+    // The generator reaches the deepest document and the empty key.
+    try expect(tally_depth_max > 0);
+    try expect(tally_empty_key > 0);
 }

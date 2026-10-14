@@ -34,8 +34,9 @@ pub const Pointer = struct {
 
 pub const ParseError = error{ InvalidPointer, TooDeep };
 
-const tilde_message = "'~' must be followed by '0' or '1'";
-const start_message = "a pointer must be empty or start with '/'";
+pub const tilde_message = "'~' must be followed by '0' or '1'";
+pub const start_message = "a pointer must be empty or start with '/'";
+pub const depth_message = "a pointer holds more than segments_max segments";
 
 /// Splits `text` into segments, written to `buffer`. The empty text is the root: zero segments.
 /// On error `diag` holds `1:col`, with `col` the 1-based byte column of the offending byte
@@ -62,7 +63,7 @@ pub fn parse(text: []const u8, buffer: []Segment, diag: *Diagnostics) ParseError
                     start = offset + 1;
                 }
                 if (count == segments_max) {
-                    return fail(diag, text, offset, error.TooDeep, "more than 128 segments");
+                    return fail(diag, text, offset, error.TooDeep, depth_message);
                 }
             },
             '~' => {
