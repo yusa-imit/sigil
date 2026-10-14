@@ -6,6 +6,11 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- ADR 0004, the path contract (plan 005 item 1): borrowed read results, path-copy atomic Patch
+  and Merge Patch, bounded JSONPath `compile`/`select`, one error vocabulary; amends PRD §4.4.
+
 ## [0.3.0] - 2026-10-14
 
 Plan 004 (Phase 2A-2C, JSON) and the first tag. Plans 002 and 003 (Phase 1A-1D: `core/` and

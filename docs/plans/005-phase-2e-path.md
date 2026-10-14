@@ -18,7 +18,7 @@ asking for it yet, so it waits.
 
 ## Scope
 
-- [ ] **ADR 0004 — path contract (design only, `architect`; return the file text, keep the
+- [x] **ADR 0004 — path contract (design only, `architect`; return the file text, keep the
       scope tight).** Pins: (a) where results live: a `Value` is a borrowed view into a
       `ValueTree`, so Pointer `resolve` returns `?*const Value`, and mutating ops (Patch,
       Merge Patch) take the tree; (b) JSONPath result type: a caller-supplied bounded node
