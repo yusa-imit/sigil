@@ -29,7 +29,7 @@ asking for it yet, so it waits.
       `length`, `count`, `match`, `search`, `value`?) and what is rejected with a typed error;
       (f) path parse diagnostics reuse `core.Diagnostics` (byte column in the query string).
       Amends PRD 4.4. Verification: `docs/adr/0004-path-contract.md` exists.
-- [ ] **`path/pointer.zig`.** `parse` into a fixed segment list (`~0`/`~1` escapes, array
+- [x] **`path/pointer.zig`.** `parse` into a fixed segment list (`~0`/`~1` escapes, array
       index grammar with no leading zeros, `-` end marker), `resolve`, `format`. Tests: every
       RFC 6901 section 5 example; invalid escape, leading-zero index, index one past the
       end; model test against a naive splitter over 1,000 seeds.

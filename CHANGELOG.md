@@ -10,6 +10,13 @@ All notable changes to this project are documented in this file. The format foll
 
 - ADR 0004, the path contract (plan 005 item 1): borrowed read results, path-copy atomic Patch
   and Merge Patch, bounded JSONPath `compile`/`select`, one error vocabulary; amends PRD §4.4.
+- `sigil.path.pointer` (plan 005 item 2): RFC 6901 `parse` into a caller-supplied segment
+  buffer (`segments_max` 128, byte-column diagnostics), allocation-free `resolve` returning a
+  borrowed `?*const Value`, `format`, `index_of`, `segment_eql`.
+
+### Removed
+
+- `sigil.path.Error` (`error{NotImplemented}`), the stub set: each path file declares its own.
 
 ## [0.3.0] - 2026-10-14
 

@@ -1,21 +1,17 @@
 //! sigil.path — JSON Pointer (RFC 6901), JSONPath (RFC 9535 subset), JSON Patch (RFC 6902),
-//! Merge Patch (RFC 7386) — all over Value.
+//! Merge Patch (RFC 7386) — all over Value (ADR 0004).
 //!
-//! Planned files (see docs/PRD.md):
-//!   - `path/pointer.zig`
-//!   - `path/jsonpath.zig`
-//!   - `path/patch.zig`
+//! Landed: `path/pointer.zig` (parse, resolve, format). Planned, one file per plan 005 item:
 //!   - `path/merge.zig`
+//!   - `path/patch.zig`
+//!   - `path/jsonpath.zig`
 //!
-//! Status: stub. Public declarations are added as PRD phases land.
+//! The stub `Error = error{NotImplemented}` is gone (ADR 0004 section 5): each file declares
+//! its own typed error sets. `path` imports `core` only and never a format module.
 
 const std = @import("std");
 
-/// Module-level error set. Extend as functionality lands; keep names descriptive
-/// (`error.ChecksumMismatch`, not `error.Invalid`).
-pub const Error = error{
-    NotImplemented,
-};
+pub const pointer = @import("path/pointer.zig");
 
 test "path: module compiles" {
     std.testing.refAllDecls(@This());
