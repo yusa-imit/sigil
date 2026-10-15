@@ -17,7 +17,7 @@ const Value = core.Value;
 const ValueTree = core.ValueTree;
 
 const nesting_max = core.value.nesting_max;
-const parse_options: dom.ParseOptions = .{ .depth_max = 128, .duplicate_key = .reject };
+const parse_options: dom.ParseOptions = .{ .depth_max = nesting_max, .duplicate_key = .reject };
 
 fn parse_json(tree: *ValueTree, text: []const u8) !Value {
     var diag = Diagnostics.init(0, 0, "", null);

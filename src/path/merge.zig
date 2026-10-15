@@ -84,6 +84,8 @@ fn merge(tree: *ValueTree, target: Value, patch: Value) MergeError!Value {
 /// of the child merge to run first when the entry is an object, null when it is settled.
 fn visit_entry(tree: *ValueTree, top: *Frame, depth: u32) MergeError!?Frame {
     assert(top.patch_index < top.patch.count);
+    assert(top.out.count <= top.out.entries.len);
+    assert(depth >= 1);
     const entry = top.patch.items()[top.patch_index];
     top.patch_index += 1;
     const slot = top.out.index_of(entry.key);
@@ -132,6 +134,7 @@ fn open_frame(tree: *ValueTree, target: Value, patch: Map) MergeError!Frame {
 /// under a copy of the patch's key.
 fn attach(tree: *ValueTree, parent: *Frame, done: Value) MergeError!void {
     assert(done == .map);
+    assert(parent.patch_index > 0);
     try store(tree, &parent.out, parent.pending_slot, parent.pending_key, done);
 }
 

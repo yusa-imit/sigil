@@ -79,6 +79,7 @@ fn is_container(value: Value) bool {
 }
 
 fn length_of(source: Value) u32 {
+    assert(is_container(source));
     return switch (source) {
         .array => |items| @intCast(items.len),
         .map => |map| map.count,
@@ -88,6 +89,8 @@ fn length_of(source: Value) u32 {
 
 /// The value of the `index`th child of the frame's source.
 fn child_of(frame: *const Frame, index: u32) Value {
+    assert(index < length_of(frame.source));
+    assert(frame.index == index);
     return switch (frame.source) {
         .array => |items| items[index],
         .map => |map| map.items()[index].value,
@@ -96,6 +99,8 @@ fn child_of(frame: *const Frame, index: u32) Value {
 }
 
 fn open(tree: *ValueTree, source: Value) CloneError!Frame {
+    assert(is_container(source));
+    assert(length_of(source) <= std.math.maxInt(u32));
     switch (source) {
         .array => |items| {
             const buffer = try tree.arena.allocator().alloc(Value, items.len);
@@ -110,6 +115,8 @@ fn open(tree: *ValueTree, source: Value) CloneError!Frame {
 }
 
 fn finish(frame: *const Frame) Value {
+    assert(frame.index == length_of(frame.source));
+    assert(is_container(frame.source));
     switch (frame.source) {
         .array => {
             assert(frame.items.len == frame.index);
@@ -176,7 +183,31 @@ test "clone: a deep copy shares no byte with its source" {
     try testing.expectEqualStrings("ab", map.get("key").?.string);
     try testing.expectEqualSlices(u8, &.{ 1, 2 }, map.get("blob").?.bytes);
     try testing.expectEqual(std.math.maxInt(u64), copy.array[1].uint);
+    try testing.expectEqual(@as(u32, 2), map.count);
     try testing.expect(map.entries.ptr != inner.entries.ptr);
+}
+
+test "clone: strings, bytes, keys and buffers are fresh allocations" {
+    var tree: ValueTree = undefined;
+    tree.init(testing.allocator);
+    defer tree.deinit();
+
+    const text: []const u8 = "text";
+    const data: []const u8 = "data";
+    var inner = try tree.new_map(1);
+    try inner.put("key", .{ .string = text });
+    const items = [_]Value{ .{ .bytes = data }, .{ .map = inner } };
+    const copy = try deep(&tree, .{ .array = &items }, 0);
+
+    try testing.expect(copy.array.ptr != &items);
+    try testing.expect(copy.array[0].bytes.ptr != data.ptr);
+    const map = copy.array[1].map;
+    try testing.expect(map.entries.ptr != inner.entries.ptr);
+    try testing.expect(map.items()[0].key.ptr != inner.items()[0].key.ptr);
+    try testing.expect(map.get("key").?.string.ptr != text.ptr);
+    const when: core.value.Timestamp = .{ .seconds = 5, .nanoseconds = 7, .offset_minutes = -60 };
+    const stamp: Value = .{ .timestamp = when };
+    try testing.expect(try core.value.eql(stamp, try deep(&tree, stamp, 0)));
 }
 
 test "clone: scalars copy as themselves and empty containers stay empty" {
