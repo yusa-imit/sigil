@@ -16,6 +16,11 @@ All notable changes to this project are documented in this file. The format foll
 - `sigil.path.merge` (plan 005 item 3): RFC 7386 `apply(tree, patch)` by path copying and one
   `tree.root` swap, explicit bounded stack, `TooDeep` at `nesting_max`; the patch is deep-copied
   into the tree (internal `path/clone.zig`), so nothing aliases it. Appendix A passes verbatim.
+- `sigil.path.patch` (plan 005 item 4): RFC 6902 `apply(tree, ops, diag)` for `add`, `remove`,
+  `replace`, `move`, `copy`, `test`; each op rebuilds the spine, `tree.root` is assigned once
+  after the last op, so any failure leaves the tree untouched; `PatchError` as in ADR 0004
+  (`op <index>: <reason>` diagnostics). `copy`/`move` deep-copy their source, so a tree never
+  holds a subtree twice. Appendix A (successes and failures) and a seeded model pass.
 
 ### Removed
 

@@ -2,8 +2,7 @@
 //! Merge Patch (RFC 7386) — all over Value (ADR 0004).
 //!
 //! Landed: `path/pointer.zig` (parse, resolve, format), `path/merge.zig` (RFC 7386, with the
-//! internal `path/clone.zig`). Planned, one file per plan 005 item:
-//!   - `path/patch.zig`
+//! internal `path/clone.zig`), `path/patch.zig` (RFC 6902). Planned, one file per plan 005 item:
 //!   - `path/jsonpath.zig`
 //!
 //! The stub `Error = error{NotImplemented}` is gone (ADR 0004 section 5): each file declares
@@ -14,6 +13,7 @@ const std = @import("std");
 
 pub const pointer = @import("path/pointer.zig");
 pub const merge = @import("path/merge.zig");
+pub const patch = @import("path/patch.zig");
 
 test "path: module compiles" {
     std.testing.refAllDecls(@This());
