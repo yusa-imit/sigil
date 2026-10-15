@@ -13,6 +13,9 @@ All notable changes to this project are documented in this file. The format foll
 - `sigil.path.pointer` (plan 005 item 2): RFC 6901 `parse` into a caller-supplied segment
   buffer (`segments_max` 128, byte-column diagnostics), allocation-free `resolve` returning a
   borrowed `?*const Value`, `format`, `index_of`, `segment_eql`.
+- `sigil.path.merge` (plan 005 item 3): RFC 7386 `apply(tree, patch)` by path copying and one
+  `tree.root` swap, explicit bounded stack, `TooDeep` at `nesting_max`; the patch is deep-copied
+  into the tree (internal `path/clone.zig`), so nothing aliases it. Appendix A passes verbatim.
 
 ### Removed
 

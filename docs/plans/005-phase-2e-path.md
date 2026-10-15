@@ -33,7 +33,7 @@ asking for it yet, so it waits.
       index grammar with no leading zeros, `-` end marker), `resolve`, `format`. Tests: every
       RFC 6901 section 5 example; invalid escape, leading-zero index, index one past the
       end; model test against a naive splitter over 1,000 seeds.
-- [ ] **`path/merge.zig`.** `apply(tree, target, patch)` per RFC 7386 (`null` deletes, objects
+- [x] **`path/merge.zig`.** `apply(tree, patch)` per RFC 7386 (`null` deletes, objects
       merge, anything else replaces) with an explicit bounded stack. Tests: the RFC appendix
       A table verbatim, depth `nesting_max` and one past (`TooDeep`), `check_invariants` of
       the result tree after every mutation.
