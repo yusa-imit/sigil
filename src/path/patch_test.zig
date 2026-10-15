@@ -71,6 +71,11 @@ fn expect_fail(doc_text: []const u8, ops_text: []const u8, err: anyerror, messag
     defer snapshot_tree.deinit();
     try expect(try core.value.eql(tree.root, try parse_json(&snapshot_tree, doc_text)));
     try expect(try core.value.eql(tree.root, before));
+    // Every error carries a reason and no source position (the tree has none).
+    try expectEqual(core.diagnostics.position_none, diag.line);
+    try expectEqual(core.diagnostics.position_none, diag.col);
+    try expect(std.mem.startsWith(u8, diag.message(), "op ") or
+        std.mem.startsWith(u8, diag.message(), "patch: "));
     @memcpy(message[0..diag.message().len], diag.message());
     return diag.message().len;
 }
@@ -407,11 +412,19 @@ test "patch: allocation failure at every point leaves the root unchanged" {
             error.OutOfMemory => {
                 failures += 1;
                 try expect(tree.root.map.entries.ptr == doc.map.entries.ptr);
+                try expect(try core.value.eql(tree.root, doc));
                 try expect(std.mem.startsWith(u8, diag.message(), "op "));
                 continue;
             },
             else => return err,
         };
+        var expected_tree: ValueTree = undefined;
+        expected_tree.init(std.testing.allocator);
+        defer expected_tree.deinit();
+        // The copy of /a is taken after the add and before the remove of /a/b/0.
+        const expected = try parse_json(&expected_tree, "{\"a\":{\"b\":[{\"k\":[true]},2]}," ++
+            "\"d\":{\"b\":[1,{\"k\":[true]},2]},\"e\":\"x\"}");
+        try expect(try core.value.eql(tree.root, expected));
         finished = true;
         break;
     }
@@ -531,4 +544,24 @@ fn model_apply(model: *std.ArrayList(i64), kind: u32, at: u32, to: u32, value: i
         },
     }
     return true;
+}
+
+test "patch: u32 index boundary, 129-segment from, escapes mid-path, prefix directions" {
+    const doc = "{\"a/b\":{\"c\":[1,2]},\"n\":[0]}";
+    try fails(
+        doc,
+        "{\"op\":\"add\",\"path\":\"/n/4294967295\",\"value\":1}",
+        error.IndexOutOfRange,
+    );
+
+    try fails(doc, "{\"op\":\"add\",\"path\":\"/n/4294967296\",\"value\":1}", error.PathNotFound);
+    const deep_from = "[{\"op\":\"copy\",\"path\":\"/n\",\"from\":\"" ++
+        ("/a" ** (nesting_max + 1)) ++ "\"}]";
+    try expect_error(doc, deep_from, error.TooDeep);
+    const grown = "{\"a/b\":{\"c\":[1,2,3]},\"n\":[0]}";
+    try expect_patch(doc, "[{\"op\":\"add\",\"path\":\"/a~1b/c/-\",\"value\":3}]", grown);
+    // Copying the root into a child is fine (an independent copy); moving a child to the root
+    // is "path is a prefix of from": remove, then add at the root replaces everything.
+    try expect_patch("[1]", "[{\"op\":\"copy\",\"from\":\"\",\"path\":\"/-\"}]", "[1,[1]]");
+    try expect_patch("{\"a\":[5]}", "[{\"op\":\"move\",\"from\":\"/a/0\",\"path\":\"\"}]", "5");
 }

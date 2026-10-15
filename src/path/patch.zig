@@ -68,6 +68,7 @@ const Spine = struct {
 /// key and nest at most `nesting_max`.
 pub fn apply(tree: *ValueTree, ops: *const Value, diag: *Diagnostics) PatchError!void {
     assert(tree.root != .array or tree.root.array.len < std.math.maxInt(u32));
+    assert(diag.message().len <= core.diagnostics.default_limits.message_len_max);
     if (ops.* != .array) return fail(diag, null, error.InvalidPatch);
 
     var current = tree.root;
@@ -418,7 +419,7 @@ const reasons = [_]struct { err: PatchError, text: []const u8 }{
     .{ .err = error.IndexOutOfRange, .text = "array index is past the end of the array" },
     .{ .err = error.TestFailed, .text = "the value found differs from the tested value" },
     .{ .err = error.InvalidMove, .text = "\"from\" is a proper prefix of \"path\"" },
-    .{ .err = error.TooDeep, .text = "the result would nest past nesting_max" },
+    .{ .err = error.TooDeep, .text = "a pointer or the result nests past nesting_max" },
     .{ .err = error.OutOfMemory, .text = "out of memory" },
 };
 
