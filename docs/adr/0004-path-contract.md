@@ -114,9 +114,16 @@ for ops that depend on earlier ops, e.g. `add` then `move`), and deep copy (O(do
   `k`-op patch on a document with an array of `n` entries therefore allocates up to `k * n *
   32` bytes. This is documented on `apply`; tuning (reuse nodes this apply already owns) is a
   later plan, not a contract change.
-- Sharing is safe because nothing in `path` mutates a node in place. `copy` and `move` share the
-  subtree (move = remove + add of the same pointer), which makes the tree a DAG: legal for a
-  `Value` (no parent pointers, `eql` and the writers walk it as a tree). Document it.
+- Sharing of untouched siblings is safe because nothing in `path` mutates a node in place.
+  `copy` and `move` deep-copy their source into the tree (move = remove, then add of the copy)
+  instead of sharing it (amended in plan 005 item 4): a shared subtree would make the tree a
+  DAG, every depth check on it a walk of the expanded tree, and `k` doubling `copy`s an
+  exponential walk. A deep copy costs memory proportional to what it produces, which the
+  allocator already bounds. The tree therefore never holds one subtree twice.
+- Array indices: one past the end at any step of a path is `IndexOutOfRange`; `-` (except
+  `add`'s final segment) and malformed indices name nothing and are `PathNotFound`. `remove` of
+  the document root is `InvalidPatch`; `move` onto its own location is a no-op, into its own
+  child `InvalidMove` (amended in plan 005 item 4).
 - Depth: an `add`/`replace`/`copy`/merge whose result would be deeper than `nesting_max` is
   `TooDeep`; the invariant "a tree `path` produced has depth <= `nesting_max`" holds.
 - `Map` has no delete, so `remove` and merge-`null` build a map without the entry (insertion order
@@ -189,8 +196,9 @@ unsupported set is exactly the `match`/`search` tests. RFC 6901 §5, RFC 7386 ap
 
 - Read paths are zero-allocation and stable under mutation. Mutation costs arena garbage, bounded
   by `ops x path width`, in exchange for atomicity with no rollback code.
-- The tree can become a DAG after `copy`/`move`. Code that mutates a tree in place (none in
-  sigil) must not assume unique ownership.
+- Untouched siblings are shared between a tree's old and new spine (garbage versions), never
+  within the live document. Code that mutates a tree in place (none in sigil) must not assume
+  unique ownership of a node it did not allocate itself.
 - `Program` is a fixed few-KB struct: callers who need longer queries must wait for a limits type
   parameter, an additive change.
 - zoltraak's `JSON.GET` needs `compile` + `select` with a fixed `out` buffer and the typed

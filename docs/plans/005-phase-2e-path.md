@@ -37,7 +37,7 @@ asking for it yet, so it waits.
       merge, anything else replaces) with an explicit bounded stack. Tests: the RFC appendix
       A table verbatim, depth `nesting_max` and one past (`TooDeep`), `check_invariants` of
       the result tree after every mutation.
-- [ ] **`path/patch.zig`.** `apply(tree, target, ops)` for `add`, `remove`, `replace`, `move`,
+- [x] **`path/patch.zig`.** `apply(tree, ops, diag)` (the target is `tree.root`) for `add`, `remove`, `replace`, `move`,
       `copy`, `test` over Pointer, with the atomicity ADR 0004 chose. Tests: RFC 6902
       appendix A (A.1-A.16) including the failing cases A.12-A.16; `move` into its own child
       is rejected; a failing allocator and a failing op leave the target as documented.
