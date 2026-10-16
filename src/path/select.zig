@@ -118,11 +118,16 @@ fn advance(frame: *Frame, program: *const Program) ?Step {
         frame.fresh = true;
         frame.position = 0;
     }
-    unreachable; // proof: each pass either returns or moves the selector index forward.
+    // proof: each pass either returns or moves the selector index forward, and the last of the
+    // selectors.len + 1 passes sees selector == len, which always returns.
+    unreachable;
 }
 
 fn next_selected(frame: *Frame, selector: Selector, program: *const Program) ?*const Value {
     const node = frame.node;
+    assert(is_container(node));
+    // A slice position goes negative when a negative step passes index 0.
+    if (selector != .slice) assert(frame.position >= 0);
     switch (selector) {
         .name => |name| {
             if (!frame.fresh) return null;
@@ -150,10 +155,13 @@ fn next_selected(frame: *Frame, selector: Selector, program: *const Program) ?*c
 }
 
 fn next_container_child(frame: *Frame) ?*const Value {
+    assert(is_container(frame.node));
+    assert(frame.position >= 0);
     while (child_at(frame.node, frame.position)) |child| {
         frame.position += 1;
         if (is_container(child)) return child;
     }
+    assert(frame.position >= child_count(frame.node));
     return null;
 }
 
@@ -190,27 +198,42 @@ fn slice_bounds(slice: Slice, length: i64) Bounds {
     const end = slice.end orelse if (forward) length else -length - 1;
     const start_norm = if (start >= 0) start else length + start;
     const end_norm = if (end >= 0) end else length + end;
-    if (forward) {
-        return .{
-            .lower = @min(@max(start_norm, 0), length),
-            .upper = @min(@max(end_norm, 0), length),
-        };
-    }
-    return .{
+    const bounds: Bounds = if (forward) .{
+        .lower = @min(@max(start_norm, 0), length),
+        .upper = @min(@max(end_norm, 0), length),
+    } else .{
         .lower = @min(@max(end_norm, -1), length - 1),
         .upper = @min(@max(start_norm, -1), length - 1),
     };
+    assert(bounds.lower >= -1);
+    assert(bounds.lower <= length);
+    assert(bounds.upper >= -1);
+    assert(bounds.upper <= length);
+    if (!forward) assert(bounds.upper <= length - 1);
+    return bounds;
 }
 
 fn index_item(items: []const Value, index: i64) ?*const Value {
     const length: i64 = @intCast(items.len);
+    assert(length >= 0);
+    assert(@abs(index) <= jsonpath.integer_max);
     const resolved = if (index >= 0) index else length + index;
     if (resolved < 0 or resolved >= length) return null;
     return &items[@intCast(resolved)];
 }
 
+/// The number of members of a container, 0 for a scalar.
+fn child_count(node: *const Value) i64 {
+    return switch (node.*) {
+        .array => |items| @intCast(items.len),
+        .map => |*map| map.count,
+        else => 0,
+    };
+}
+
 fn child_at(node: *const Value, position: i64) ?*const Value {
     assert(position >= 0);
+    assert(position <= std.math.maxInt(u32));
     const index: usize = @intCast(position);
     switch (node.*) {
         .array => |items| return if (index < items.len) &items[index] else null,
@@ -230,6 +253,7 @@ fn emit(out: []*const Value, found: *u32, node: *const Value) SelectError!void {
 }
 
 fn is_container(node: *const Value) bool {
+    assert(@intFromPtr(node) != 0);
     return switch (node.*) {
         .array, .map => true,
         else => false,

@@ -113,6 +113,9 @@ test "select: bookstore child wildcard, indexed book and the whole-document wild
     const program = try compile("$..*");
     var out: [64]*const Value = undefined;
     const nodes = try jsonpath.select(&program, &root, &out);
+    try expect_select("{\"a\":[1,{\"b\":2}],\"c\":3}", "$..*", &.{
+        "[1,{\"b\":2}]", "3", "1", "{\"b\":2}", "2",
+    });
     // store, book, bicycle, 4 books (4+4+5+5 members), bicycle's 2 members, 18 book members.
     try expectEqual(@as(usize, 1 + 2 + 4 + 2 + 18), nodes.len);
 }
@@ -137,6 +140,22 @@ test "select: RFC 9535 section 2.3 index, wildcard and slice tables" {
     try expect_select(letters, "$[-100:2]", &.{ "\"a\"", "\"b\"" });
     try expect_select(letters, "$[0:100:3]", &.{ "\"a\"", "\"d\"", "\"g\"" });
     try expect_select(letters, "$[2:2]", &.{});
+    try expect_select(letters, "$[10:0:-1]", &.{
+        "\"g\"", "\"f\"", "\"e\"", "\"d\"", "\"c\"", "\"b\"",
+    });
+    try expect_select(letters, "$[:-100:-1]", &.{
+        "\"g\"", "\"f\"", "\"e\"", "\"d\"", "\"c\"", "\"b\"", "\"a\"",
+    });
+    try expect_select(letters, "$[-100::-1]", &.{});
+    try expect_select(letters, "$[0:0:-1]", &.{});
+    try expect_select(letters, "$[-1:-4:-1]", &.{ "\"g\"", "\"f\"", "\"e\"" });
+    try expect_select(letters, "$[::9007199254740991]", &.{"\"a\""});
+    try expect_select(letters, "$[::-9007199254740991]", &.{"\"g\""});
+    try expect_select(letters, "$[-9007199254740991]", &.{});
+    try expect_select(letters, "$[9007199254740991]", &.{});
+    try expect_select(letters, "$[-9007199254740991:9007199254740991]", &.{
+        "\"a\"", "\"b\"", "\"c\"", "\"d\"", "\"e\"", "\"f\"", "\"g\"",
+    });
 
     const object = "{\"o\":{\"j\":1,\"k\":2},\"a\":[5,3]}";
     try expect_select(object, "$[*]", &.{ "{\"j\":1,\"k\":2}", "[5,3]" });
@@ -283,6 +302,18 @@ test "select: nesting_max containers deep is accepted and one deeper is TooDeep"
 
     nest_arrays(&levels, nesting_max + 1);
     try std.testing.expectError(error.TooDeep, jsonpath.select(&program, &levels[0], &out));
+
+    // A deep container as the last result needs no frame; a mid-query one does.
+    nest_arrays(&levels, nesting_max + 1);
+    const last = try compile("$[0]..[0]");
+    try std.testing.expectError(error.TooDeep, jsonpath.select(&last, &levels[0], &out));
+    nest_arrays(&levels, nesting_max);
+    const mid = try compile("$..[0]");
+    try expectEqual(@as(usize, nesting_max - 1), (try jsonpath.select(&mid, &levels[0], &out)).len);
+    const tail = try compile("$[0][0]");
+    nest_arrays(&levels, nesting_max + 1);
+    try expectEqual(@as(usize, 1), (try jsonpath.select(&tail, &levels[0], &out)).len);
+    try std.testing.expectError(error.TooDeep, jsonpath.select(&mid, &levels[0], &out));
 
     // A child-only query never pushes a frame for its results, so depth is not reached.
     const shallow = try compile("$[0]");
@@ -449,6 +480,7 @@ fn model_query(random: std.Random, buffer: []u8) ![]const u8 {
     try w.writeByte('$');
     var descendants: u32 = 0;
     for (0..random.intRangeAtMost(u8, 1, 3)) |_| {
+        // One descendant at most: two nested ones multiply the result size past the reference.
         if (descendants == 0 and random.uintLessThan(u8, 3) == 0) {
             descendants += 1;
             try w.writeAll("..");
