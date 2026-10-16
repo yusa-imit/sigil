@@ -17,6 +17,7 @@
 const std = @import("std");
 const core = @import("../core.zig");
 const assert = std.debug.assert;
+const select_impl = @import("select.zig");
 const Diagnostics = core.Diagnostics;
 
 pub const segments_max: u32 = 32;
@@ -108,6 +109,11 @@ pub const Program = struct {
         assert(next_selector == program.selectors_count);
     }
 };
+
+pub const SelectError = select_impl.SelectError;
+
+/// Evaluates `program` over `root` into `out`; see `path/select.zig` for the contract.
+pub const select = select_impl.select;
 
 /// Parses `query` into `program`. On error `diag` holds `1:col`, `col` the 1-based byte column of
 /// the offending byte (`QueryTooLong`: of the first byte past `query_len_max`;
@@ -461,4 +467,5 @@ fn reset(program: *Program) void {
 
 test {
     _ = @import("jsonpath_test.zig");
+    _ = select_impl;
 }
