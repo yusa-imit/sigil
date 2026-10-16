@@ -41,7 +41,7 @@ asking for it yet, so it waits.
       `copy`, `test` over Pointer, with the atomicity ADR 0004 chose. Tests: RFC 6902
       appendix A (A.1-A.16) including the failing cases A.12-A.16; `move` into its own child
       is rejected; a failing allocator and a failing op leave the target as documented.
-- [ ] **`path/jsonpath.zig` — parse.** Query string into a bounded selector program
+- [x] **`path/jsonpath.zig` — parse.** Query string into a bounded selector program
       (child name and index, wildcard, slice with negative steps, descendant segment);
       `segments_max` and `selectors_max` limits, typed `QueryTooLong`/`InvalidSyntax` errors
       with a column. Tests: valid and invalid grammar tables from RFC 9535 section 2, every

@@ -21,6 +21,10 @@ All notable changes to this project are documented in this file. The format foll
   after the last op, so any failure leaves the tree untouched; `PatchError` as in ADR 0004
   (`op <index>: <reason>` diagnostics). `copy`/`move` deep-copy their source, so a tree never
   holds a subtree twice. Appendix A (successes and failures) and a seeded model pass.
+- `sigil.path.jsonpath` (plan 005 item 5): `compile(*Program, query, diag)` parses the RFC 9535
+  grammar without filters into a fixed-size `Program` (names, indices, `*`, slices, `..`,
+  selector lists); limits `segments_max` 32, `selectors_max` 64, `query_len_max` 1024; typed
+  `QueryError` with byte-column diagnostics. `select` and filters follow in items 6 and 7.
 
 ### Removed
 
