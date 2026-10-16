@@ -24,7 +24,12 @@ All notable changes to this project are documented in this file. The format foll
 - `sigil.path.jsonpath` (plan 005 item 5): `compile(*Program, query, diag)` parses the RFC 9535
   grammar without filters into a fixed-size `Program` (names, indices, `*`, slices, `..`,
   selector lists); limits `segments_max` 32, `selectors_max` 64, `query_len_max` 1024; typed
-  `QueryError` with byte-column diagnostics. `select` and filters follow in items 6 and 7.
+  `QueryError` with byte-column diagnostics. Filters follow in item 7.
+- `sigil.path.jsonpath.select` (plan 005 item 6): `select(program, root, out)` evaluates a
+  `Program` with an explicit `nesting_max` frame stack (no recursion, no allocation), in document
+  order with duplicates kept; results are pointers into the document, `OutOfSpace` one past
+  `out.len`, `TooDeep` for a container nested past `nesting_max`. RFC 9535 section 1.5, 2.3 and
+  2.5.2 examples and a seeded model against a level-by-level reference pass.
 
 ### Removed
 

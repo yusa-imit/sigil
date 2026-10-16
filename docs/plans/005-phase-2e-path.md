@@ -46,7 +46,7 @@ asking for it yet, so it waits.
       `segments_max` and `selectors_max` limits, typed `QueryTooLong`/`InvalidSyntax` errors
       with a column. Tests: valid and invalid grammar tables from RFC 9535 section 2, every
       error variant provoked, boundary at each `_max`.
-- [ ] **`path/jsonpath.zig` — evaluate.** `select(query, root, out)` with an explicit work
+- [x] **`path/jsonpath.zig` — evaluate.** `select(query, root, out)` with an explicit work
       stack (descendant traversal has no recursion), document order preserved, `out` bounded.
       Tests: RFC 9535 section 1.5 bookstore examples, empty result vs `OutOfSpace`,
       `nesting_max`-deep document, wildcard on empty array and object.
