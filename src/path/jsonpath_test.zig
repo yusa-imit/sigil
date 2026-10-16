@@ -144,6 +144,8 @@ test "jsonpath compile: string escapes decode into the program" {
         .{ "$['\\u00E9']", "$['\xc3\xa9']" },
         .{ "$['\\ud83d\\ude00']", "$['\xf0\x9f\x98\x80']" },
         .{ "$['\\u0000']", "$['\x00']" },
+        .{ "$['\\u0041\\u0042']", "$['AB']" },
+        .{ "$['\\ud83d\\ude00x']", "$['\xf0\x9f\x98\x80x']" },
         .{ "$[\"'\"]", "$[''']" },
         .{ "$['\"']", "$['\"']" },
     };
@@ -181,6 +183,12 @@ test "jsonpath compile: InvalidSyntax reports the column of the offending byte" 
         .{ "$['a' 'b']", 7 },
         .{ "$[01]", 3 },
         .{ "$[-0]", 3 },
+        .{ "$[-01]", 3 },
+        .{ "$[1:-0]", 5 },
+        .{ "$[::00]", 5 },
+        .{ "$.. a", 4 },
+        .{ "$\x0b.a", 2 },
+        .{ "$[\x0c'a']", 3 },
         .{ "$[-]", 4 },
         .{ "$[+1]", 3 },
         .{ "$[1.5]", 4 },
@@ -201,6 +209,9 @@ test "jsonpath compile: bad string escapes and bytes are InvalidSyntax at the ba
         .{ "$['\\ud800']", 4 },
         .{ "$['\\ud800x']", 4 },
         .{ "$['\\ud800\\u0041']", 4 },
+        .{ "$['\\ud800\\uZZZZ']", 4 },
+        .{ "$['\\ud800\\ud800']", 4 },
+        .{ "$['\\udc00\\ud800']", 4 },
         .{ "$['\\udc00']", 4 },
         .{ "$['\\u12G4']", 4 },
         .{ "$['\\u12']", 4 },
@@ -252,7 +263,7 @@ test "jsonpath compile: selector count boundary spans the whole query" {
     try expect_fails(prefix ++ ".b", error.TooManySelectors, prefix.len + 2);
 }
 
-test "jsonpath compile: a failed compile leaves no diagnostics on success and sets them on error" {
+test "jsonpath compile: diag is untouched on success and set on error" {
     var program: Program = undefined;
     var diag = Diagnostics.init(7, 7, "kept", "kept");
     try jsonpath.compile(&program, "$.a", &diag);

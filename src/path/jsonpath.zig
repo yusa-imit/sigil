@@ -98,7 +98,11 @@ pub const Program = struct {
                 .name => |name| assert(name.offset + name.len <= program.names_len),
                 .index => |value| assert(@abs(value) <= integer_max),
                 .wildcard => {},
-                .slice => |slice| assert(@abs(slice.step) <= integer_max),
+                .slice => |slice| {
+                    assert(@abs(slice.step) <= integer_max);
+                    if (slice.start) |start| assert(@abs(start) <= integer_max);
+                    if (slice.end) |end| assert(@abs(end) <= integer_max);
+                },
             };
         }
         assert(next_selector == program.selectors_count);
@@ -109,7 +113,9 @@ pub const Program = struct {
 /// the offending byte (`QueryTooLong`: of the first byte past `query_len_max`;
 /// `TooManySegments`: of the segment's first byte; `TooManySelectors`: of the selector's first
 /// byte; `IntegerOutOfRange`: of the number's first byte), and `program` is unspecified. On
-/// success `diag` is untouched. The query is not retained.
+/// success `diag` is untouched. The query is not retained. The whole query is checked for UTF-8
+/// first, so an invalid byte hides an earlier syntax error; the segment limit is checked before
+/// a segment is parsed, so a 33rd segment is `TooManySegments` even if it is malformed.
 pub fn compile(program: *Program, query: []const u8, diag: *Diagnostics) QueryError!void {
     reset(program);
     var parser: Parser = .{ .query = query, .program = program, .diag = diag, .pos = 0 };
@@ -295,6 +301,8 @@ const Parser = struct {
             error.Overflow => return parser.fail_range(start),
         };
         if (magnitude > integer_max) return parser.fail_range(start);
+        assert(magnitude >= 0);
+        assert(parser.pos > start);
         return if (negative) -magnitude else magnitude;
     }
 
@@ -367,6 +375,8 @@ const Parser = struct {
         const len = core.unicode_escape.encode(decoded.codepoint, &utf8) catch unreachable;
         for (utf8[0..len]) |byte| parser.push_name_byte(byte);
         parser.pos = at + 6 * @as(u32, decoded.units_count);
+        assert(parser.pos <= parser.query.len);
+        assert(decoded.units_count == 1 or decoded.units_count == 2);
     }
 
     fn add_selector(parser: *Parser, selector: Selector, at: u32) QueryError!void {
@@ -376,6 +386,8 @@ const Parser = struct {
         }
         program.selectors[program.selectors_count] = selector;
         program.selectors_count += 1;
+        assert(program.selectors_count <= selectors_max);
+        assert(at < parser.query.len);
     }
 
     fn push_name_byte(parser: *Parser, byte: u8) void {
