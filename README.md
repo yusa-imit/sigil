@@ -63,4 +63,5 @@ full dependency map.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Vendored test data under `tests/` keeps its own license
+(`tests/json/LICENSE` MIT, `tests/jsonpath/LICENSE` BSD-2).

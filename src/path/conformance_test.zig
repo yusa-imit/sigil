@@ -58,6 +58,8 @@ const Tally = struct {
     unsupported: u32 = 0,
     /// Unsupported tests the suite does not tag `match` or `search`: must stay zero.
     untagged: u32 = 0,
+    /// Divergences named in `pinned_divergent`.
+    pinned: u32 = 0,
     diverging: u32 = 0,
 };
 
@@ -70,8 +72,8 @@ fn has_tag(case: *const core.Map, tag: []const u8) bool {
     return false;
 }
 
-fn is_pinned(name: []const u8) bool {
-    for (pinned_divergent) |pinned| {
+fn is_pinned(pins: []const []const u8, name: []const u8) bool {
+    for (pins) |pinned| {
         if (std.mem.eql(u8, pinned, name)) return true;
     }
     return false;
@@ -101,24 +103,37 @@ fn nodes_match(gpa: std.mem.Allocator, nodes: []const *const Value, want: []cons
     return true;
 }
 
-/// Judges one valid test: compile, select, compare against `result` or any of `results`.
-fn judge_valid(gpa: std.mem.Allocator, case: *const core.Map) !Verdict {
-    const selector = case.get("selector").?.string;
+/// How `compile` treated a selector. `limit` is a resource limit, never a grammar verdict.
+const Compiled = enum { ok, unsupported, syntax, limit };
+
+fn compile_class(selector: []const u8, diag: *Diagnostics) Compiled {
     var program: Program = undefined;
-    var diag = Diagnostics.init(0, 0, "", null);
-    // proof: `compile` does no I/O, so `error.Canceled` cannot occur; the set is exhaustive.
-    jsonpath.compile(&program, selector, &diag) catch |err| switch (err) {
+    // proof: exhaustive over `QueryError`, which has no I/O error; new variants need an arm.
+    jsonpath.compile(&program, selector, diag) catch |err| switch (err) {
         error.UnsupportedFunction => return .unsupported,
-        error.InvalidSyntax,
+        error.InvalidSyntax, error.IntegerOutOfRange, error.UnknownFunction => return .syntax,
         error.QueryTooLong,
         error.TooManySegments,
         error.TooManySelectors,
-        error.IntegerOutOfRange,
         error.FilterTooDeep,
         error.FilterTooLong,
-        error.UnknownFunction,
-        => return .diverges,
+        => return .limit,
     };
+    return .ok;
+}
+
+/// Judges one valid test: compile, select, compare against `result` or any of `results`.
+fn judge_valid(gpa: std.mem.Allocator, case: *const core.Map) !Verdict {
+    const selector = case.get("selector").?.string;
+    var diag = Diagnostics.init(0, 0, "", null);
+    switch (compile_class(selector, &diag)) {
+        .ok => {},
+        .unsupported => return .unsupported,
+        .syntax, .limit => return .diverges,
+    }
+    var program: Program = undefined;
+    try jsonpath.compile(&program, selector, &diag);
+
     var out: [nodes_max]*const Value = undefined;
     const document = case.get("document").?;
     // A bigger answer than the buffer is a divergence to report, not a crash.
@@ -132,28 +147,29 @@ fn judge_valid(gpa: std.mem.Allocator, case: *const core.Map) !Verdict {
     return .diverges;
 }
 
-/// Judges one `invalid_selector` test: `compile` must fail with a typed error.
+/// Judges one `invalid_selector` test: `compile` must reject it as a grammar error (a limit
+/// error would be the right outcome for the wrong reason) with a byte column on line 1.
 fn judge_invalid(case: *const core.Map) Verdict {
     const selector = case.get("selector").?.string;
-    var program: Program = undefined;
     var diag = Diagnostics.init(0, 0, "", null);
-    // proof: `compile` does no I/O, so `error.Canceled` cannot occur; the set is exhaustive.
-    jsonpath.compile(&program, selector, &diag) catch |err| switch (err) {
-        error.UnsupportedFunction => return .unsupported,
-        error.InvalidSyntax,
-        error.QueryTooLong,
-        error.TooManySegments,
-        error.TooManySelectors,
-        error.IntegerOutOfRange,
-        error.FilterTooDeep,
-        error.FilterTooLong,
-        error.UnknownFunction,
-        => return .pass,
-    };
-    return .diverges;
+    switch (compile_class(selector, &diag)) {
+        .ok, .limit => return .diverges,
+        .unsupported => return .unsupported,
+        .syntax => {},
+    }
+    if (diag.line != 1) return .diverges;
+    if (diag.col < 1) return .diverges;
+    return .pass;
 }
 
-fn run_suite(gpa: std.mem.Allocator, tests: []const Value) !Tally {
+/// Judges every test; `report` logs each unexpected divergence (an error-level log fails a
+/// test, so the probe test passes false).
+fn run_suite(
+    gpa: std.mem.Allocator,
+    tests: []const Value,
+    pins: []const []const u8,
+    report: bool,
+) !Tally {
     var tally: Tally = .{};
     for (tests) |*item| {
         const case = &item.map;
@@ -167,10 +183,11 @@ fn run_suite(gpa: std.mem.Allocator, tests: []const Value) !Tally {
                 tally.unsupported += 1;
                 if (!has_tag(case, "match") and !has_tag(case, "search")) tally.untagged += 1;
             },
-            .diverges => {
-                if (is_pinned(name)) continue;
+            .diverges => if (is_pinned(pins, name)) {
+                tally.pinned += 1;
+            } else {
                 tally.diverging += 1;
-                std.log.err("conformance: '{s}' [{s}] diverges", .{
+                if (report) std.log.err("conformance: '{s}' [{s}] diverges", .{
                     name, case.get("selector").?.string,
                 });
             },
@@ -183,10 +200,8 @@ test "conformance: the vendored JSONPath suite has the pinned verdict counts" {
     const io = std.testing.io;
     const gpa = std.testing.allocator;
 
-    var dir = try std.Io.Dir.cwd().openDir(io, ".", .{});
-    defer dir.close(io);
-
-    const bytes = try dir.readFileAlloc(io, suite_path, gpa, .limited(suite_bytes_max));
+    const cwd = std.Io.Dir.cwd();
+    const bytes = try cwd.readFileAlloc(io, suite_path, gpa, .limited(suite_bytes_max));
     defer gpa.free(bytes);
 
     var tree: ValueTree = undefined;
@@ -196,42 +211,63 @@ test "conformance: the vendored JSONPath suite has the pinned verdict counts" {
     var diag = Diagnostics.init(0, 0, "", null);
     const root = try dom.parse(&tree, bytes, parse_options, &diag);
     const tests = root.map.get("tests").?.array;
-    const tally = try run_suite(gpa, tests);
-    std.log.warn("conformance: {d} tests, {d} invalid, {d} valid, {d} pass, {d} unsupported", .{
-        tests.len, tally.invalid, tally.valid, tally.pass, tally.unsupported,
+    const tally = try run_suite(gpa, tests, &pinned_divergent, true);
+    std.log.warn("conformance: {d} tests ({d} invalid, {d} valid): {d} pass, {d} unsupported, " ++
+        "{d} pinned divergent, {d} unexpected", .{
+        tests.len,       tally.invalid,     tally.valid,
+        tally.pass,      tally.unsupported, tally.pinned,
+        tally.diverging,
     });
     try expectEqual(suite_count, @as(u32, @intCast(tests.len)));
     try expectEqual(invalid_count, tally.invalid);
     try expectEqual(valid_count, tally.valid);
     try expectEqual(unsupported_count, tally.unsupported);
     try expectEqual(@as(u32, 0), tally.untagged);
-    try expectEqual(divergent_count, tally.diverging);
+    try expectEqual(@as(u32, 0), tally.diverging);
+    try expectEqual(divergent_count, tally.pinned);
     try expectEqual(suite_count - unsupported_count - divergent_count, tally.pass);
 }
 
 const probe_cases =
     \\[{"name":"ok","selector":"$.a","document":{"a":1},"result":[1]},
     \\{"name":"wrong result","selector":"$.a","document":{"a":1},"result":[2]},
+    \\{"name":"wrong count","selector":"$.*","document":{"a":1,"b":2},"result":[1]},
+    \\{"name":"key order","selector":"$.a","document":{"a":{"x":1,"y":2}},"result":[{"y":2,"x":1}]},
+    \\{"name":"alt hit","selector":"$.*","document":{"a":1,"b":2},"results":[[2,1],[1,2]]},
+    \\{"name":"alt miss","selector":"$.*","document":{"a":1,"b":2},"results":[[2,1],[3]]},
+    \\{"name":"rejected valid","selector":"$.","document":{"a":1},"result":[1]},
+    \\{"name":"match","selector":"$[?match(@, 'a')]","document":["a"],"result":[],"tags":["match"]},
+    \\{"name":"match untagged","selector":"$[?search(@, 'a')]","document":["a"],"result":["a"]},
     \\{"name":"valid but marked invalid","selector":"$.a","invalid_selector":true},
-    \\{"name":"invalid","selector":"$.","invalid_selector":true}]
+    \\{"name":"invalid","selector":"$.","invalid_selector":true},
+    \\{"name":"unsupported invalid","selector":"$[?match(@)]","invalid_selector":true}]
 ;
 
-test "conformance: the judges fail a wrong expectation and a wrong validity" {
+test "conformance: the judges fail wrong expectations and the tally counts them" {
     const gpa = std.testing.allocator;
     var tree: ValueTree = undefined;
     tree.init(gpa);
     defer tree.deinit();
 
     var diag = Diagnostics.init(0, 0, "", null);
-    const cases = try dom.parse(&tree, probe_cases, parse_options, &diag);
-    const items = cases.array;
-    try expectEqual(Verdict.pass, try judge_valid(gpa, &items[0].map));
-    try expectEqual(Verdict.diverges, try judge_valid(gpa, &items[1].map));
-    try expectEqual(Verdict.diverges, judge_invalid(&items[2].map));
-    try expectEqual(Verdict.pass, judge_invalid(&items[3].map));
-}
-
-test "conformance: a divergence is pinned by name or counted" {
-    comptime std.debug.assert(pinned_divergent.len == divergent_count);
-    try expect(!is_pinned("basic, root"));
+    const items = (try dom.parse(&tree, probe_cases, parse_options, &diag)).array;
+    const expected = [_]Verdict{
+        .pass,     .diverges,    .diverges,    .pass,     .pass, .diverges,
+        .diverges, .unsupported, .unsupported, .diverges, .pass, .unsupported,
+    };
+    try expectEqual(expected.len, items.len);
+    for (items, expected) |*item, want| {
+        const case = &item.map;
+        const got = if (case.get("invalid_selector") != null)
+            judge_invalid(case)
+        else
+            try judge_valid(gpa, case);
+        try expectEqual(want, got);
+    }
+    const pins = [_][]const u8{ "wrong result", "no such test" };
+    const tally = try run_suite(gpa, items, &pins, false);
+    try expectEqual(@as(u32, 12), tally.invalid + tally.valid);
+    try expectEqual(@as(u32, 2), tally.untagged);
+    try expectEqual(@as(u32, 1), tally.pinned);
+    try expectEqual(@as(u32, 4), tally.diverging);
 }
