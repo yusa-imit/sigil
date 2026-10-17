@@ -39,6 +39,10 @@ All notable changes to this project are documented in this file. The format foll
   `selectors_max` selectors. `Selector` gains a `filter` variant (exhaustive switches over it
   need an arm). Container equality ignores map key order and compares numbers by value. RFC
   9535 section 2.3.5.3 examples pass verbatim.
+- JSONPath conformance (plan 005 item 8): `path/conformance_test.zig` runs the vendored
+  jsonpath-standard compliance suite (`tests/jsonpath/cts.json`, commit 20ebdcc, BSD-2 license
+  and notice beside it). Counts, asserted: 715 tests (249 invalid, 466 valid), 659 pass, 56
+  pinned unsupported (`match`/`search`, 24 + 32 tagged), 0 divergent.
 
 ### Removed
 
