@@ -35,7 +35,10 @@ All notable changes to this project are documented in this file. The format foll
   numbers compare by exact value across `int`/`uint`/`float`, NaN never matches. New
   `QueryError` variants `FilterTooDeep`, `FilterTooLong`, `UnsupportedFunction` (`match`,
   `search`) and `UnknownFunction`; limits `filter_depth_max` 8, `filters_max` 32, `exprs_max`
-  128, `queries_max` 32. RFC 9535 section 2.3.5.3 examples pass verbatim.
+  128, `queries_max` 32; embedded queries share one pool of `segments_max` segments and
+  `selectors_max` selectors. `Selector` gains a `filter` variant (exhaustive switches over it
+  need an arm). Container equality ignores map key order and compares numbers by value. RFC
+  9535 section 2.3.5.3 examples pass verbatim.
 
 ### Removed
 

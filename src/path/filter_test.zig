@@ -167,6 +167,23 @@ test "filter: arrays and objects compare by value, strings by bytes, types never
     try expect_select("[\"1\",1]", "$[?@ == 1]", &.{"1"});
 }
 
+const keys_equal = "{\"a\":{\"x\":1,\"y\":2},\"b\":{\"y\":2,\"x\":1}}";
+
+test "filter: container equality ignores key order and compares numbers by value" {
+    const keys = "[" ++ keys_equal ++ ",{\"a\":{\"x\":1},\"b\":{\"z\":1}}]";
+    try expect_select(keys, "$[?@.a == @.b]", &.{keys_equal});
+    const numbers = "[{\"a\":[1,[0.0]],\"b\":[1.0,[-0]]},{\"a\":[1],\"b\":[1,2]}]";
+    try expect_select(numbers, "$[?@.a == @.b]", &.{"{\"a\":[1,[0.0]],\"b\":[1.0,[0]]}"});
+    try expect_select(numbers, "$[?@.a != @.b]", &.{"{\"a\":[1],\"b\":[1,2]}"});
+    try expect_select(keys, "$[?@.a <= @.b]", &.{keys_equal});
+    try expect_select(keys, "$[?@.a >= @.b]", &.{keys_equal});
+    try expect_select("[{\"k\":1}]", "$[?@.x <= @.y]", &.{"{\"k\":1}"});
+    try expect_select("[{\"k\":1}]", "$[?@.x >= @.y]", &.{"{\"k\":1}"});
+    try expect_select("[{\"x\":1}]", "$[?@.x >= @.y]", &.{});
+    try expect_select("[{\"x\":1}]", "$[?@.y <= @.x]", &.{});
+    try expect_select("[{\"a\":[1,{\"c\":[]}],\"b\":[1,{\"c\":{}}]}]", "$[?@.a == @.b]", &.{});
+}
+
 test "filter: numbers compare by exact value across int, uint and float" {
     const doc = "[9007199254740993,9007199254740992,9007199254740992.0,1.0,1]";
     var tree: ValueTree = undefined;
@@ -289,6 +306,16 @@ test "filter: depth, filter, node and query limits at their boundaries" {
 fn put(sink: *std.Io.Writer, text: []const u8) void {
     // proof: every list built here fits the 1024-byte buffer, the longest is 33 x 5 bytes.
     sink.writeAll(text) catch unreachable;
+}
+
+test "filter: embedded queries share the segment and selector pools" {
+    var query: [1024]u8 = undefined;
+    try expect_compiles(build_list(&query, "$[?", "@.a.b", "||", 16, "]"));
+    const segments_over = build_list(&query, "$[?", "@.a.b", "||", 17, "]");
+    try expect_fails(segments_over, error.TooManySegments, 4 + 7 * 16);
+    try expect_compiles(build_list(&query, "$[?", "@[1,2,3,4]", "||", 16, "]"));
+    const selectors_over = build_list(&query, "$[?", "@[1,2,3,4]", "||", 17, "]");
+    try expect_fails(selectors_over, error.TooManySelectors, 4 + 12 * 16);
 }
 
 /// `head`, `count` copies of `item` separated by `separator`, then `tail`, in `buffer`.

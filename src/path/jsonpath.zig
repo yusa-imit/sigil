@@ -12,7 +12,10 @@
 //! indexes into `names`. Integers are within the I-JSON range of plus or minus 2^53 - 1.
 //! Allocation: none. A `Program` is a fixed-size struct the caller owns; decoded names are
 //! copied inline, so it borrows nothing from the query text. Read-only after `compile`.
-//! Cost: O(query length). No recursion: the grammar here is a flat loop over segments.
+//! Cost: O(query length). Segments are a flat loop; only filter nesting recurses, bounded by
+//! `filter_depth_max` (ADR 0004 section 6). Embedded queries of filters share the `sub_segments`
+//! and `sub_selectors` pools (at most `segments_max` and `selectors_max` entries in total, then
+//! `TooManySegments`/`TooManySelectors`).
 
 const std = @import("std");
 const core = @import("../core.zig");
@@ -148,17 +151,30 @@ pub const Program = struct {
         assert(program.queries_count <= queries_max);
         assert(program.sub_segments_count <= segments_max);
         assert(program.sub_selectors_count <= selectors_max);
-        for (program.filters[0..program.filters_count]) |one| {
+        for (program.filters[0..program.filters_count], 0..) |one, id| {
             assert(one.first <= one.root);
             assert(one.root < program.exprs_count);
+            const root = program.exprs[one.root];
+            assert(root.owner == id);
+            switch (root.node) {
+                .exists, .negation, .compare, .conjunction, .disjunction => {},
+                else => unreachable, // proof: parse_basic/parse_or only return logical nodes.
+            }
         }
         for (program.exprs[0..program.exprs_count], 0..) |expr, index| {
             assert(expr.owner < program.filters_count);
+            assert(index >= program.filters[expr.owner].first);
+            assert(index <= program.filters[expr.owner].root);
             switch (expr.node) {
                 .query => |query| assert(query < program.queries_count),
-                .exists => |child| assert(child < index),
-                .negation => |child| assert(child < index),
-                .call => |call| assert(call.argument < index),
+                .exists, .negation => |child| {
+                    assert(child < index);
+                    assert(program.exprs[child].owner == expr.owner);
+                },
+                .call => |call| {
+                    assert(call.argument < index);
+                    assert(program.exprs[call.argument].owner == expr.owner);
+                },
                 .compare => |pair| assert(@max(pair.left, pair.right) < index),
                 .conjunction, .disjunction => |pair| assert(@max(pair.left, pair.right) < index),
                 else => {},

@@ -76,6 +76,7 @@ pub const Item = union(enum) {
     uint: u64,
     float: f64,
     string: []const u8,
+    /// A container, `bytes` or `timestamp` document node (other scalars become their own item).
     node: *const Value,
     nodes: struct { count: u32, first: ?*const Value },
 };
@@ -100,6 +101,7 @@ pub fn evaluate(
         const expr = program.exprs[index];
         if (expr.owner != filter_index) continue;
         items[index] = try evaluate_node(program, root, level, expr.node, candidate, &items);
+        assert(expr.owner == filter_index);
     }
     const result = items[filter.root];
     assert(program.exprs[filter.root].owner == filter_index);
@@ -117,6 +119,8 @@ fn evaluate_node(
     candidate: *const Value,
     items: []const Item,
 ) select.SelectError!Item {
+    assert(program.exprs_count <= jsonpath.exprs_max);
+    assert(items.len == jsonpath.exprs_max);
     switch (node) {
         .literal_null => return .null,
         .literal_bool => |value| return .{ .boolean = value },
@@ -156,11 +160,14 @@ fn query_item(
 
 fn call_item(function: Function, argument: Item) Item {
     switch (function) {
-        .count => return .{ .int = argument.nodes.count },
+        .count => {
+            assert(argument == .nodes);
+            return .{ .int = argument.nodes.count };
+        },
         .value => return value_of(argument),
         .length => switch (value_of(argument)) {
             .string => |text| {
-                // proof: strings in a Value tree are valid UTF-8; an invalid one has no length.
+                // A parsed tree holds valid UTF-8; a hand-built invalid string has no length.
                 const length = std.unicode.utf8CountCodepoints(text) catch return .nothing;
                 return .{ .int = @intCast(length) };
             },
@@ -217,9 +224,103 @@ fn equal(left: Item, right: Item) select.SelectError!bool {
         .null => right == .null,
         .boolean => |a| right == .boolean and right.boolean == a,
         .string => |a| right == .string and std.mem.eql(u8, a, right.string),
-        .node => |a| right == .node and try core.value.eql(a.*, right.node.*),
+        .node => |a| right == .node and try deep_equal(a, right.node),
         .int, .uint, .float, .nodes => false,
     };
+}
+
+const nesting_max = core.value.nesting_max;
+
+const EqualFrame = struct { a: *const Value, b: *const Value, position: u32 };
+
+const EqualNext = union(enum) {
+    done,
+    mismatch,
+    pair: struct { a: *const Value, b: *const Value },
+};
+
+/// RFC 9535 value equality for document nodes: arrays by position, maps by key set (order does
+/// not matter), numbers by exact value (`[1]` equals `[1.0]`), NaN never equal. Iterative, one
+/// frame per container pair; `TooDeep` past `nesting_max`.
+fn deep_equal(a: *const Value, b: *const Value) select.SelectError!bool {
+    var frames: [nesting_max]EqualFrame = undefined;
+    var depth: u32 = 0;
+    switch (compare_pair(a, b)) {
+        .unequal => return false,
+        .equal => return true,
+        .descend => {
+            frames[0] = .{ .a = a, .b = b, .position = 0 };
+            depth = 1;
+        },
+    }
+    while (depth > 0) {
+        assert(depth <= nesting_max);
+        const next = next_pair(&frames[depth - 1]);
+        switch (next) {
+            .done => depth -= 1,
+            .mismatch => return false,
+            .pair => |pair| switch (compare_pair(pair.a, pair.b)) {
+                .unequal => return false,
+                .equal => {},
+                .descend => {
+                    if (depth == nesting_max) return error.TooDeep;
+                    frames[depth] = .{ .a = pair.a, .b = pair.b, .position = 0 };
+                    depth += 1;
+                },
+            },
+        }
+    }
+    assert(depth == 0);
+    return true;
+}
+
+const PairKind = enum { equal, unequal, descend };
+
+/// Decides a pair of nodes without looking at children: containers of equal size descend.
+fn compare_pair(a: *const Value, b: *const Value) PairKind {
+    switch (a.*) {
+        .array => |items| {
+            if (b.* != .array or b.array.len != items.len) return .unequal;
+            return if (items.len == 0) .equal else .descend;
+        },
+        .map => |map| {
+            if (b.* != .map or b.map.count != map.count) return .unequal;
+            return if (map.count == 0) .equal else .descend;
+        },
+        else => {},
+    }
+    if (b.* == .array or b.* == .map) return .unequal;
+    const left = item_of(a);
+    const right = item_of(b);
+    if (is_number(left) and is_number(right)) {
+        return if (order_numbers(left, right) == Order.eq) .equal else .unequal;
+    }
+    if (std.meta.activeTag(a.*) != std.meta.activeTag(b.*)) return .unequal;
+    // proof: scalars (bytes and timestamps included) hold no children, so eql cannot be TooDeep.
+    const same = core.value.eql(a.*, b.*) catch unreachable;
+    return if (same) .equal else .unequal;
+}
+
+fn next_pair(frame: *EqualFrame) EqualNext {
+    const index = frame.position;
+    switch (frame.a.*) {
+        .array => |items| {
+            if (index == items.len) return .done;
+            assert(frame.b.array.len == items.len);
+            frame.position += 1;
+            return .{ .pair = .{ .a = &items[index], .b = &frame.b.array[index] } };
+        },
+        .map => |*map| {
+            const entries = map.items();
+            if (index == entries.len) return .done;
+            assert(frame.b.map.count == map.count);
+            frame.position += 1;
+            const other = &frame.b.map;
+            const found = other.get(entries[index].key) orelse return .mismatch;
+            return .{ .pair = .{ .a = &entries[index].value, .b = found } };
+        },
+        else => unreachable, // proof: only container pairs are pushed as frames.
+    }
 }
 
 fn less(left: Item, right: Item) bool {
