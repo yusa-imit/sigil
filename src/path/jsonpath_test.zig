@@ -31,6 +31,7 @@ fn render(program: *const Program, w: *std.Io.Writer) !void {
                 .name => |name| try w.print("'{s}'", .{program.name_text(name)}),
                 .index => |value| try w.print("{d}", .{value}),
                 .wildcard => try w.writeByte('*'),
+                .filter => |id| try w.print("?{d}", .{id}),
                 .slice => |slice| {
                     if (slice.start) |start| try w.print("{d}", .{start});
                     try w.writeByte(':');
@@ -196,7 +197,6 @@ test "jsonpath compile: InvalidSyntax reports the column of the offending byte" 
         .{ "$[1::2:]", 7 },
         .{ "$.a ", 4 },
         .{ "$ ", 2 },
-        .{ "$[?@.a]", 3 },
     };
     for (cases) |case| try expect_fails(case[0], error.InvalidSyntax, case[1]);
 }

@@ -30,6 +30,15 @@ All notable changes to this project are documented in this file. The format foll
   order with duplicates kept; results are pointers into the document, `OutOfSpace` one past
   `out.len`, `TooDeep` for a container nested past `nesting_max`. RFC 9535 section 1.5, 2.3 and
   2.5.2 examples and a seeded model against a level-by-level reference pass.
+- JSONPath filters (plan 005 item 7): `?expr` with `== != < <= > >=`, `&&`, `||`, `!`,
+  parentheses, existence tests of `@`/`$` queries, literals and `length`, `count`, `value`;
+  numbers compare by exact value across `int`/`uint`/`float`, NaN never matches. New
+  `QueryError` variants `FilterTooDeep`, `FilterTooLong`, `UnsupportedFunction` (`match`,
+  `search`) and `UnknownFunction`; limits `filter_depth_max` 8, `filters_max` 32, `exprs_max`
+  128, `queries_max` 32; embedded queries share one pool of `segments_max` segments and
+  `selectors_max` selectors. `Selector` gains a `filter` variant (exhaustive switches over it
+  need an arm). Container equality ignores map key order and compares numbers by value. RFC
+  9535 section 2.3.5.3 examples pass verbatim.
 
 ### Removed
 

@@ -2,9 +2,9 @@
 //!
 //! `compile` turns a query text into a `Program`: up to `segments_max` segments, each a child or
 //! descendant (`..`) step holding a selector list of names, indices, wildcards and slices. The
-//! grammar is RFC 9535 section 2 without filters, which land with item 7 (a `?` selector is an
-//! `InvalidSyntax` until then). Whitespace is accepted where the RFC allows it (before a
-//! segment and around bracket selectors, never trailing and never after a `.`).
+//! grammar is RFC 9535 section 2 including filters (`?expr`, see `filter.zig` for the compiled
+//! form and `filter_parse.zig` for the grammar). Whitespace is accepted where the RFC allows it
+//! (before a segment and around bracket selectors, never trailing and never after a `.`).
 //!
 //! Invariants: `segments_count <= segments_max`, `selectors_count <= selectors_max`, `names_len
 //! <= query_len_max`; the selectors of segment `i` are the `selectors_count` entries starting at
@@ -12,17 +12,28 @@
 //! indexes into `names`. Integers are within the I-JSON range of plus or minus 2^53 - 1.
 //! Allocation: none. A `Program` is a fixed-size struct the caller owns; decoded names are
 //! copied inline, so it borrows nothing from the query text. Read-only after `compile`.
-//! Cost: O(query length). No recursion: the grammar here is a flat loop over segments.
+//! Cost: O(query length). Segments are a flat loop; only filter nesting recurses, bounded by
+//! `filter_depth_max` (ADR 0004 section 6). Embedded queries of filters share the `sub_segments`
+//! and `sub_selectors` pools (at most `segments_max` and `selectors_max` entries in total, then
+//! `TooManySegments`/`TooManySelectors`).
 
 const std = @import("std");
 const core = @import("../core.zig");
 const assert = std.debug.assert;
+const filter = @import("filter.zig");
+const filter_parse = @import("filter_parse.zig");
 const select_impl = @import("select.zig");
 const Diagnostics = core.Diagnostics;
 
 pub const segments_max: u32 = 32;
 pub const selectors_max: u32 = 64;
 pub const query_len_max: u32 = 1024;
+/// Nesting of `(...)`, function calls and filters inside filters.
+pub const filter_depth_max: u32 = 8;
+/// Filter selectors, expression nodes and embedded queries in the whole query.
+pub const filters_max: u32 = 32;
+pub const exprs_max: u32 = 128;
+pub const queries_max: u32 = 32;
 
 /// Largest index, slice bound or step: the I-JSON exact-integer limit 2^53 - 1.
 pub const integer_max: i64 = 9007199254740991;
@@ -33,6 +44,14 @@ pub const QueryError = error{
     TooManySegments,
     TooManySelectors,
     IntegerOutOfRange,
+    FilterTooDeep,
+    /// More than `filters_max` filters, `exprs_max` expression nodes or `queries_max` embedded
+    /// queries.
+    FilterTooLong,
+    /// `match` and `search` need an I-Regexp matcher (ADR 0004 section 6).
+    UnsupportedFunction,
+    /// An unknown function name, or a known one with the wrong argument count or type.
+    UnknownFunction,
 };
 
 /// A decoded name: `len` bytes at `offset` of the program's `names` buffer.
@@ -46,6 +65,8 @@ pub const Selector = union(enum) {
     index: i64,
     wildcard,
     slice: Slice,
+    /// Index into `Program.filters`.
+    filter: u32,
 };
 
 /// One step of the query: the selectors at `selectors[selectors_first..][0..selectors_count]`,
@@ -63,6 +84,17 @@ pub const Program = struct {
     segments: [segments_max]Segment,
     selectors: [selectors_max]Selector,
     names: [query_len_max]u8,
+    /// Filter machinery; segments and selectors of embedded queries live in the `sub_` pools.
+    filters_count: u32,
+    exprs_count: u32,
+    queries_count: u32,
+    sub_segments_count: u32,
+    sub_selectors_count: u32,
+    filters: [filters_max]filter.Filter,
+    exprs: [exprs_max]filter.Expr,
+    queries: [queries_max]filter.QueryRef,
+    sub_segments: [segments_max]Segment,
+    sub_selectors: [selectors_max]Selector,
 
     /// The compiled segments, in query order.
     pub fn segment_list(program: *const Program) []const Segment {
@@ -104,9 +136,58 @@ pub const Program = struct {
                     if (slice.start) |start| assert(@abs(start) <= integer_max);
                     if (slice.end) |end| assert(@abs(end) <= integer_max);
                 },
+                .filter => |id| assert(id < program.filters_count),
             };
         }
         assert(next_selector == program.selectors_count);
+        program.check_filter_invariants();
+    }
+
+    /// The filter half of `check_invariants`: counts within limits, every filter's nodes inside
+    /// the node pool with children below parents, embedded queries inside the `sub_` pools.
+    fn check_filter_invariants(program: *const Program) void {
+        assert(program.filters_count <= filters_max);
+        assert(program.exprs_count <= exprs_max);
+        assert(program.queries_count <= queries_max);
+        assert(program.sub_segments_count <= segments_max);
+        assert(program.sub_selectors_count <= selectors_max);
+        for (program.filters[0..program.filters_count], 0..) |one, id| {
+            assert(one.first <= one.root);
+            assert(one.root < program.exprs_count);
+            const root = program.exprs[one.root];
+            assert(root.owner == id);
+            switch (root.node) {
+                .exists, .negation, .compare, .conjunction, .disjunction => {},
+                else => unreachable, // proof: parse_basic/parse_or only return logical nodes.
+            }
+        }
+        for (program.exprs[0..program.exprs_count], 0..) |expr, index| {
+            assert(expr.owner < program.filters_count);
+            assert(index >= program.filters[expr.owner].first);
+            assert(index <= program.filters[expr.owner].root);
+            switch (expr.node) {
+                .query => |query| assert(query < program.queries_count),
+                .exists, .negation => |child| {
+                    assert(child < index);
+                    assert(program.exprs[child].owner == expr.owner);
+                },
+                .call => |call| {
+                    assert(call.argument < index);
+                    assert(program.exprs[call.argument].owner == expr.owner);
+                },
+                .compare => |pair| assert(@max(pair.left, pair.right) < index),
+                .conjunction, .disjunction => |pair| assert(@max(pair.left, pair.right) < index),
+                else => {},
+            }
+        }
+        for (program.queries[0..program.queries_count]) |query| {
+            assert(query.segments_first + query.segments_count <= program.sub_segments_count);
+        }
+        for (program.sub_segments[0..program.sub_segments_count]) |segment| {
+            assert(segment.selectors_count >= 1);
+            const end = segment.selectors_first + segment.selectors_count;
+            assert(end <= program.sub_selectors_count);
+        }
     }
 };
 
@@ -124,7 +205,14 @@ pub const select = select_impl.select;
 /// a segment is parsed, so a 33rd segment is `TooManySegments` even if it is malformed.
 pub fn compile(program: *Program, query: []const u8, diag: *Diagnostics) QueryError!void {
     reset(program);
-    var parser: Parser = .{ .query = query, .program = program, .diag = diag, .pos = 0 };
+    var parser: Parser = .{
+        .query = query,
+        .program = program,
+        .diag = diag,
+        .pos = 0,
+        .depth = 0,
+        .filter_current = 0,
+    };
     if (query.len > query_len_max) {
         return parser.fail(query_len_max, error.QueryTooLong, "query is longer than query_len_max");
     }
@@ -141,11 +229,25 @@ pub fn compile(program: *Program, query: []const u8, diag: *Diagnostics) QueryEr
 
 const blank_bytes = " \t\n\r";
 
-const Parser = struct {
+/// Where the segments and selectors of one query are collected: the program's own arrays for
+/// the main query, local buffers for an embedded one (copied into the `sub_` pools once the
+/// query is complete, so its entries stay contiguous even when a filter nests another query).
+pub const Builder = struct {
+    segments: []Segment,
+    selectors: []Selector,
+    segments_count: u32,
+    selectors_count: u32,
+};
+
+pub const Parser = struct {
     query: []const u8,
     program: *Program,
     diag: *Diagnostics,
     pos: u32,
+    /// Open `(...)`, function calls and filters at the current position.
+    depth: u32,
+    /// Index of the filter whose expression is being parsed (the `owner` of new nodes).
+    filter_current: u32,
 
     fn parse_query(parser: *Parser) QueryError!void {
         assert(parser.pos == 0);
@@ -153,56 +255,138 @@ const Parser = struct {
             return parser.fail(0, error.InvalidSyntax, "a query must start with '$'");
         }
         parser.pos = 1;
+        var builder: Builder = .{
+            .segments = &parser.program.segments,
+            .selectors = &parser.program.selectors,
+            .segments_count = 0,
+            .selectors_count = 0,
+        };
+        try parser.parse_segments(&builder, false);
+        parser.program.segments_count = builder.segments_count;
+        parser.program.selectors_count = builder.selectors_count;
+    }
+
+    /// Parses `@` or `$` (at `pos`) and the segments after it as an embedded query; returns its
+    /// index in `program.queries`.
+    pub fn parse_embedded_query(parser: *Parser, absolute: bool) QueryError!u32 {
+        const start = parser.pos;
+        assert(parser.query[start] == (if (absolute) @as(u8, '$') else '@'));
+        parser.pos += 1;
+        var segments: [segments_max]Segment = undefined;
+        var selectors: [selectors_max]Selector = undefined;
+        var builder: Builder = .{
+            .segments = &segments,
+            .selectors = &selectors,
+            .segments_count = 0,
+            .selectors_count = 0,
+        };
+        try parser.parse_segments(&builder, true);
+        return parser.commit_query(&builder, absolute, start);
+    }
+
+    fn commit_query(
+        parser: *Parser,
+        builder: *const Builder,
+        absolute: bool,
+        at: u32,
+    ) QueryError!u32 {
+        const program = parser.program;
+        if (program.queries_count == queries_max) {
+            return parser.fail(at, error.FilterTooLong, "more than queries_max embedded queries");
+        }
+        if (program.sub_segments_count + builder.segments_count > segments_max) {
+            return parser.fail(at, error.TooManySegments, "more than segments_max segments");
+        }
+        if (program.sub_selectors_count + builder.selectors_count > selectors_max) {
+            return parser.fail(at, error.TooManySelectors, "more than selectors_max selectors");
+        }
+        const segments_first = program.sub_segments_count;
+        const selectors_first = program.sub_selectors_count;
+        var singular = true;
+        for (builder.segments[0..builder.segments_count]) |segment| {
+            var copy = segment;
+            copy.selectors_first += selectors_first;
+            program.sub_segments[program.sub_segments_count] = copy;
+            program.sub_segments_count += 1;
+            const only = builder.selectors[segment.selectors_first];
+            const single = segment.selectors_count == 1 and (only == .name or only == .index);
+            if (segment.descendant or !single) singular = false;
+        }
+        for (builder.selectors[0..builder.selectors_count]) |selector| {
+            program.sub_selectors[program.sub_selectors_count] = selector;
+            program.sub_selectors_count += 1;
+        }
+        const index = program.queries_count;
+        program.queries[index] = .{
+            .absolute = absolute,
+            .singular = singular,
+            .segments_first = segments_first,
+            .segments_count = builder.segments_count,
+        };
+        program.queries_count += 1;
+        assert(program.sub_selectors_count == selectors_first + builder.selectors_count);
+        return index;
+    }
+
+    /// Segments up to the end of the query (`embedded` false: trailing whitespace is an error)
+    /// or up to the first byte that cannot start a segment (`embedded` true: the position is
+    /// left before any blank that precedes it).
+    fn parse_segments(parser: *Parser, builder: *Builder, embedded: bool) QueryError!void {
         for (0..segments_max + 1) |_| {
             const blank_start = parser.pos;
             parser.skip_blank();
-            if (parser.peek() == null) {
+            const byte = parser.peek();
+            if (embedded and byte != '.' and byte != '[') {
+                parser.pos = blank_start;
+                return;
+            }
+            if (byte == null) {
                 if (parser.pos == blank_start) return;
                 return parser.fail(blank_start, error.InvalidSyntax, "trailing whitespace");
             }
-            try parser.parse_segment();
+            try parser.parse_segment(builder);
         }
         // proof: segment number segments_max + 1 fails with TooManySegments before the loop ends.
         unreachable;
     }
 
-    fn parse_segment(parser: *Parser) QueryError!void {
+    fn parse_segment(parser: *Parser, builder: *Builder) QueryError!void {
         const start = parser.pos;
-        if (parser.program.segments_count == segments_max) {
+        if (builder.segments_count == segments_max) {
             return parser.fail(start, error.TooManySegments, "more than segments_max segments");
         }
-        const first = parser.program.selectors_count;
+        const first = builder.selectors_count;
         var descendant = false;
         switch (parser.query[start]) {
             '.' => {
                 descendant = parser.peek_at(start + 1) == '.';
                 parser.pos += if (descendant) 2 else 1;
-                try parser.parse_after_dots(descendant);
+                try parser.parse_after_dots(builder, descendant);
             },
-            '[' => try parser.parse_bracket(),
+            '[' => try parser.parse_bracket(builder),
             else => return parser.fail(start, error.InvalidSyntax, "expected '.', '..' or '['"),
         }
-        const count = parser.program.selectors_count - first;
+        const count = builder.selectors_count - first;
         assert(count >= 1);
-        parser.program.segments[parser.program.segments_count] = .{
+        builder.segments[builder.segments_count] = .{
             .descendant = descendant,
             .selectors_first = first,
             .selectors_count = count,
         };
-        parser.program.segments_count += 1;
+        builder.segments_count += 1;
     }
 
     /// After `.` or `..`: a wildcard or a shorthand name, and after `..` also a bracket list.
-    fn parse_after_dots(parser: *Parser, descendant: bool) QueryError!void {
+    fn parse_after_dots(parser: *Parser, builder: *Builder, descendant: bool) QueryError!void {
         const at = parser.pos;
         const byte = parser.peek() orelse {
             return parser.fail(at, error.InvalidSyntax, "a selector must follow the dots");
         };
         if (byte == '*') {
             parser.pos += 1;
-            return parser.add_selector(.wildcard, at);
+            return parser.add_selector(builder, .wildcard, at);
         }
-        if (byte == '[' and descendant) return parser.parse_bracket();
+        if (byte == '[' and descendant) return parser.parse_bracket(builder);
         if (!is_name_first(byte)) {
             return parser.fail(at, error.InvalidSyntax, "a name or '*' must follow the dots");
         }
@@ -215,17 +399,17 @@ const Parser = struct {
         }
         const name: Name = .{ .offset = name_start, .len = parser.program.names_len - name_start };
         assert(name.len >= 1);
-        return parser.add_selector(.{ .name = name }, at);
+        return parser.add_selector(builder, .{ .name = name }, at);
     }
 
-    fn parse_bracket(parser: *Parser) QueryError!void {
+    fn parse_bracket(parser: *Parser, builder: *Builder) QueryError!void {
         assert(parser.query[parser.pos] == '[');
         parser.pos += 1;
         for (0..selectors_max + 1) |_| {
             parser.skip_blank();
             const at = parser.pos;
             const selector = try parser.parse_selector();
-            try parser.add_selector(selector, at);
+            try parser.add_selector(builder, selector, at);
             parser.skip_blank();
             const byte = parser.peek() orelse {
                 return parser.fail(parser.pos, error.InvalidSyntax, "unterminated bracket");
@@ -255,7 +439,7 @@ const Parser = struct {
             },
             '\'', '"' => return .{ .name = try parser.parse_string(byte) },
             '-', '0'...'9', ':' => return parser.parse_index_or_slice(),
-            '?' => return parser.fail(at, error.InvalidSyntax, "filters are not supported yet"),
+            '?' => return .{ .filter = try filter_parse.parse_filter(parser) },
             else => return parser.fail(at, error.InvalidSyntax, "a selector is expected"),
         }
     }
@@ -312,7 +496,7 @@ const Parser = struct {
         return if (negative) -magnitude else magnitude;
     }
 
-    fn parse_string(parser: *Parser, quote: u8) QueryError!Name {
+    pub fn parse_string(parser: *Parser, quote: u8) QueryError!Name {
         assert(quote == '\'' or quote == '"');
         assert(parser.query[parser.pos] == quote);
         const name_start = parser.program.names_len;
@@ -385,18 +569,22 @@ const Parser = struct {
         assert(decoded.units_count == 1 or decoded.units_count == 2);
     }
 
-    fn add_selector(parser: *Parser, selector: Selector, at: u32) QueryError!void {
-        const program = parser.program;
-        if (program.selectors_count == selectors_max) {
+    fn add_selector(
+        parser: *Parser,
+        builder: *Builder,
+        selector: Selector,
+        at: u32,
+    ) QueryError!void {
+        if (builder.selectors_count == selectors_max) {
             return parser.fail(at, error.TooManySelectors, "more than selectors_max selectors");
         }
-        program.selectors[program.selectors_count] = selector;
-        program.selectors_count += 1;
-        assert(program.selectors_count <= selectors_max);
+        builder.selectors[builder.selectors_count] = selector;
+        builder.selectors_count += 1;
+        assert(builder.selectors_count <= selectors_max);
         assert(at < parser.query.len);
     }
 
-    fn push_name_byte(parser: *Parser, byte: u8) void {
+    pub fn push_name_byte(parser: *Parser, byte: u8) void {
         const program = parser.program;
         // Decoded names never outgrow the query text, which is at most query_len_max bytes.
         assert(program.names_len < query_len_max);
@@ -410,11 +598,11 @@ const Parser = struct {
         return core.unicode_escape.parse_hex4(digits) catch null;
     }
 
-    fn peek(parser: *const Parser) ?u8 {
+    pub fn peek(parser: *const Parser) ?u8 {
         return parser.peek_at(parser.pos);
     }
 
-    fn peek_at(parser: *const Parser, offset: u32) ?u8 {
+    pub fn peek_at(parser: *const Parser, offset: u32) ?u8 {
         if (offset >= parser.query.len) return null;
         return parser.query[offset];
     }
@@ -424,7 +612,7 @@ const Parser = struct {
         return byte == '-' or std.ascii.isDigit(byte);
     }
 
-    fn skip_blank(parser: *Parser) void {
+    pub fn skip_blank(parser: *Parser) void {
         while (parser.peek()) |byte| {
             if (std.mem.findScalar(u8, blank_bytes, byte) == null) return;
             parser.pos += 1;
@@ -435,7 +623,7 @@ const Parser = struct {
         return parser.fail(offset, error.IntegerOutOfRange, "integer is outside 2^53 - 1");
     }
 
-    fn fail(parser: *Parser, offset: u32, err: QueryError, message: []const u8) QueryError {
+    pub fn fail(parser: *Parser, offset: u32, err: QueryError, message: []const u8) QueryError {
         assert(offset <= parser.query.len);
         parser.diag.* = Diagnostics.init(
             1,
@@ -463,9 +651,27 @@ fn reset(program: *Program) void {
     @memset(&program.segments, empty_segment);
     @memset(&program.selectors, .wildcard);
     @memset(&program.names, 0);
+    program.filters_count = 0;
+    program.exprs_count = 0;
+    program.queries_count = 0;
+    program.sub_segments_count = 0;
+    program.sub_selectors_count = 0;
+    @memset(&program.filters, .{ .first = 0, .root = 0 });
+    @memset(&program.exprs, .{ .owner = 0, .node = .literal_null });
+    const empty_query: filter.QueryRef = .{
+        .absolute = false,
+        .singular = false,
+        .segments_first = 0,
+        .segments_count = 0,
+    };
+    @memset(&program.queries, empty_query);
+    @memset(&program.sub_segments, empty_segment);
+    @memset(&program.sub_selectors, .wildcard);
 }
 
 test {
     _ = @import("jsonpath_test.zig");
     _ = select_impl;
+    _ = filter;
+    _ = filter_parse;
 }

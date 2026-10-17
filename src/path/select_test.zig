@@ -372,6 +372,7 @@ fn reference_selector(
         .slice => |slice| if (node.* == .array) {
             try reference_slice(gpa, result, node.array, slice);
         },
+        .filter => unreachable, // proof: the model's generated queries never contain a filter.
     }
 }
 
