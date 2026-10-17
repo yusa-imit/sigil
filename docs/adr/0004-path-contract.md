@@ -179,8 +179,19 @@ pub fn select(program: *const Program, root: *const Value, out: []*const Value)
   Strings compare by bytes (UTF-8 code point order, which equals byte order).
 - **No recursion:** `select` keeps an explicit stack of `(container, next child index)` frames of
   length `nesting_max`; a document deeper than that is `TooDeep` (cannot occur for a tree from
-  `json`, but a hand-built `Value` is not trusted). Filters evaluate on a separate bounded stack
-  of `filter_depth_max` frames. Cost: O(nodes visited x selectors); `$..*` is O(document).
+  `json`, but a hand-built `Value` is not trusted). Cost: O(nodes visited x selectors); `$..*` is
+  O(document).
+- **Filters (amended in plan 005 item 7):** a filter is a tree of nodes in `Program.exprs`,
+  children before parents, each tagged with its owning filter, evaluated by one flat loop per
+  candidate (both sides of `&&`/`||` are evaluated; nodes are pure). The expression grammar and
+  an embedded query that contains a filter recurse once per nesting level; the recursion depth
+  is bounded by `filter_depth_max` (the parser rejects deeper input with `FilterTooDeep`, and
+  `select` asserts the level), each level adds one `nesting_max` frame stack, so the stack
+  cost is a constant (about 9 KB x 9) independent of the input. This replaces the "separate
+  bounded stack" sketched originally: an explicit-continuation machine for suspended filter
+  evaluation was judged larger and riskier than a constant-bounded recursion. Added limits:
+  `filters_max` 32, `exprs_max` 128, `queries_max` 32 (embedded queries; their segments and
+  selectors live in `sub_` pools of `segments_max`/`selectors_max`), error `FilterTooLong`.
 - `select` writes at most `out.len` nodes; one more is `OutOfSpace` and `out` contents are
   unspecified. An empty result is `out[0..0]`, never an error.
 - `Program` borrows nothing from `query` (decoded names are copied inline), so the query text

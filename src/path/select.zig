@@ -8,6 +8,11 @@
 //! with duplicates kept (`$[0,0]` yields two); depth-first order equals the RFC 9535 section
 //! 2.5 order because each segment maps one node to a list and the lists are concatenated.
 //!
+//! Filter selectors (`?expr`) apply `filter.evaluate` to each child of the node; an embedded
+//! query inside a filter is walked by `summarize`, which re-enters `walk` one level deeper. That
+//! is the only recursion, bounded by `filter_depth_max` levels (the parser rejects deeper
+//! queries), each level owning its own frame stack.
+//!
 //! Invariants: every returned pointer aims into the `root` tree (array items and map entry
 //! values), so results live as long as it does; scalar nodes never get a frame (a selector on a
 //! scalar selects nothing); a frame exists only for a container, so the stack depth is at most
@@ -16,9 +21,11 @@
 
 const std = @import("std");
 const core = @import("../core.zig");
+const filter = @import("filter.zig");
 const jsonpath = @import("jsonpath.zig");
 const assert = std.debug.assert;
 const Program = jsonpath.Program;
+const Segment = jsonpath.Segment;
 const Selector = jsonpath.Selector;
 const Slice = jsonpath.Slice;
 const Value = core.Value;
@@ -40,35 +47,84 @@ pub fn select(
 ) SelectError![]*const Value {
     assert(program.segments_count <= jsonpath.segments_max);
     assert(program.segments_count == 0 or program.selectors_count >= 1);
-    var found: u32 = 0;
-    if (program.segments_count == 0) {
-        try emit(out, &found, root);
-        return out[0..found];
+    const context: Context = .{ .program = program, .root = root, .level = 0 };
+    const query: Query = .{
+        .segments = program.segment_list(),
+        .selectors = program.selectors[0..program.selectors_count],
+    };
+    var sink: Sink = .{ .out = out, .found = 0, .first = null };
+    try walk(&context, query, root, &sink);
+    assert(sink.found <= out.len);
+    return out[0..sink.found];
+}
+
+/// The size and first node of an embedded query's node list.
+pub const Summary = struct { count: u32, first: ?*const Value };
+
+/// Runs embedded query `query_ref` from `candidate` (or the root, when absolute) at nesting
+/// `level`, counting its nodes without storing them.
+pub fn summarize(
+    program: *const Program,
+    root: *const Value,
+    level: u32,
+    query_ref: filter.QueryRef,
+    candidate: *const Value,
+) SelectError!Summary {
+    assert(level >= 1);
+    assert(level <= jsonpath.filter_depth_max);
+    const context: Context = .{ .program = program, .root = root, .level = level };
+    const query: Query = .{
+        .segments = program.sub_segments[query_ref.segments_first..][0..query_ref.segments_count],
+        .selectors = program.sub_selectors[0..program.sub_selectors_count],
+    };
+    var sink: Sink = .{ .out = null, .found = 0, .first = null };
+    try walk(&context, query, if (query_ref.absolute) root else candidate, &sink);
+    return .{ .count = sink.found, .first = sink.first };
+}
+
+/// The program, the document root (`$`) and the filter nesting level of one walk.
+const Context = struct { program: *const Program, root: *const Value, level: u32 };
+
+/// The segments of one query and the selector pool their `selectors_first` indexes into.
+const Query = struct {
+    segments: []const Segment,
+    selectors: []const Selector,
+
+    fn selector_list(query: Query, segment: Segment) []const Selector {
+        assert(segment.selectors_count >= 1);
+        assert(segment.selectors_first + segment.selectors_count <= query.selectors.len);
+        return query.selectors[segment.selectors_first..][0..segment.selectors_count];
     }
-    if (!is_container(root)) return out[0..0];
+};
+
+/// Collects results: stored in `out` when present, always counted; `first` is the first node.
+const Sink = struct { out: ?[]*const Value, found: u32, first: ?*const Value };
+
+fn walk(context: *const Context, query: Query, start: *const Value, sink: *Sink) SelectError!void {
+    assert(context.level <= jsonpath.filter_depth_max);
+    if (query.segments.len == 0) return emit(sink, start);
+    if (!is_container(start)) return;
 
     var frames: [nesting_max]Frame = undefined;
-    frames[0] = Frame.init(root, 0);
+    frames[0] = Frame.init(start, 0);
     var depth: u32 = 1;
     while (depth > 0) {
         assert(depth <= nesting_max);
         const top = &frames[depth - 1];
-        const step = advance(top, program) orelse {
+        const step = try advance(top, context, query) orelse {
             depth -= 1;
             continue;
         };
         const next_segment = if (step.same_segment) top.segment else top.segment + 1;
-        if (next_segment == program.segments_count) {
+        if (next_segment == query.segments.len) {
             assert(!step.same_segment);
-            try emit(out, &found, step.child);
+            try emit(sink, step.child);
         } else if (is_container(step.child)) {
             if (depth == nesting_max) return error.TooDeep;
             frames[depth] = Frame.init(step.child, next_segment);
             depth += 1;
         }
     }
-    assert(found <= out.len);
-    return out[0..found];
 }
 
 /// One open container and how far its segment has progressed.
@@ -101,9 +157,9 @@ const Frame = struct {
 /// (descendant) segment, otherwise it is a result of this segment and feeds the next one.
 const Step = struct { child: *const Value, same_segment: bool };
 
-fn advance(frame: *Frame, program: *const Program) ?Step {
-    const segment = program.segment_list()[frame.segment];
-    const selectors = program.selector_list(segment);
+fn advance(frame: *Frame, context: *const Context, query: Query) SelectError!?Step {
+    const segment = query.segments[frame.segment];
+    const selectors = query.selector_list(segment);
     assert(frame.selector <= selectors.len);
     for (0..selectors.len + 1) |_| {
         if (frame.selector == selectors.len) {
@@ -111,7 +167,7 @@ fn advance(frame: *Frame, program: *const Program) ?Step {
             const child = next_container_child(frame) orelse return null;
             return .{ .child = child, .same_segment = true };
         }
-        if (next_selected(frame, selectors[frame.selector], program)) |child| {
+        if (try next_selected(frame, selectors[frame.selector], context)) |child| {
             return .{ .child = child, .same_segment = false };
         }
         frame.selector += 1;
@@ -123,7 +179,12 @@ fn advance(frame: *Frame, program: *const Program) ?Step {
     unreachable;
 }
 
-fn next_selected(frame: *Frame, selector: Selector, program: *const Program) ?*const Value {
+fn next_selected(
+    frame: *Frame,
+    selector: Selector,
+    context: *const Context,
+) SelectError!?*const Value {
+    const program = context.program;
     const node = frame.node;
     assert(is_container(node));
     // A slice position goes negative when a negative step passes index 0.
@@ -151,7 +212,19 @@ fn next_selected(frame: *Frame, selector: Selector, program: *const Program) ?*c
             return child;
         },
         .slice => |slice| return next_slice(frame, slice),
+        .filter => |index| return next_filtered(frame, context, index),
     }
+}
+
+/// The next child of the frame's node for which filter `index` holds.
+fn next_filtered(frame: *Frame, context: *const Context, index: u32) SelectError!?*const Value {
+    while (child_at(frame.node, frame.position)) |child| {
+        frame.position += 1;
+        const level = context.level;
+        if (try filter.evaluate(context.program, context.root, level, index, child)) return child;
+    }
+    assert(frame.position >= child_count(frame.node));
+    return null;
 }
 
 fn next_container_child(frame: *Frame) ?*const Value {
@@ -245,11 +318,14 @@ fn child_at(node: *const Value, position: i64) ?*const Value {
     }
 }
 
-fn emit(out: []*const Value, found: *u32, node: *const Value) SelectError!void {
-    assert(found.* <= out.len);
-    if (found.* == out.len) return error.OutOfSpace;
-    out[found.*] = node;
-    found.* += 1;
+fn emit(sink: *Sink, node: *const Value) SelectError!void {
+    if (sink.out) |out| {
+        assert(sink.found <= out.len);
+        if (sink.found == out.len) return error.OutOfSpace;
+        out[sink.found] = node;
+    }
+    if (sink.found == 0) sink.first = node;
+    sink.found +|= 1;
 }
 
 fn is_container(node: *const Value) bool {
