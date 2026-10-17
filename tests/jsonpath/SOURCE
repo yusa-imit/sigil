@@ -1,0 +1,3 @@
+Vendored from https://github.com/jsonpath-standard/jsonpath-compliance-test-suite
+commit 20ebdcce5008c8a777ee9c80ad853ecf606950b5 (2026-10-13); files cts.json, LICENSE, NOTICE.
+BSD-2 license, Copyright 2020 VMware, Inc.; unmodified. Run by src/path/conformance_test.zig.

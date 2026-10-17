@@ -671,6 +671,7 @@ fn reset(program: *Program) void {
 
 test {
     _ = @import("jsonpath_test.zig");
+    _ = @import("conformance_test.zig");
     _ = select_impl;
     _ = filter;
     _ = filter_parse;

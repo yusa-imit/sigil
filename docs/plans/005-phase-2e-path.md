@@ -50,11 +50,11 @@ asking for it yet, so it waits.
       stack (descendant traversal has no recursion), document order preserved, `out` bounded.
       Tests: RFC 9535 section 1.5 bookstore examples, empty result vs `OutOfSpace`,
       `nesting_max`-deep document, wildcard on empty array and object.
-- [ ] **JSONPath filters.** `?` expressions: comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`),
+- [x] **JSONPath filters.** `?` expressions: comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`),
       `&&`, `||`, `!`, existence test, and the function set ADR 0004 admits; expression
       depth bounded by `filter_depth_max`. Tests: the RFC 9535 filter examples; comparison
       of int, uint and float follows `core.number` exactness (no silent int to float).
-- [ ] **Conformance corpus.** Vendor the JSONPath compliance test suite (its license is
+- [x] **Conformance corpus.** Vendor the JSONPath compliance test suite (its license is
       checked and committed beside it, as JSONTestSuite was) and run it from `zig build
       test` with the pass, fail and pinned-unsupported counts asserted, never "no crash".
       Verification: suite counts printed by the test and recorded in the CHANGELOG.
