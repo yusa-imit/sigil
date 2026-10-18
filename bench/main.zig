@@ -46,14 +46,27 @@ const Record = struct {
 const Document = struct { records: []const Record };
 
 /// What one benchmark measured: bytes it pushed through the format code across all iterations,
-/// the time that took, and the arena capacity one iteration needed (0 when it has no arena).
+/// the time that took, the arena capacity one iteration needed (0 when it has no arena), and,
+/// for the `path` benchmarks, how many nodes they resolved or selected across all iterations
+/// (0 for the format benchmarks, which print no ns per match).
 const Result = struct {
     bytes_total: u64,
     elapsed_ns: u64,
     arena_bytes: u64,
+    matches_total: u64 = 0,
 };
 
 const BenchError = error{ OutOfMemory, BenchFailed };
+
+/// Pointer lookups per iteration of `path.pointer.resolve`; each parses its own pointer text.
+const pointer_lookups: u32 = 1 << 16;
+
+/// Capacity of the `select` output buffer; the generated document has far fewer nodes.
+const select_out_max: u32 = 1 << 20;
+
+const query_descendants = "$..*";
+
+const query_filter = "$.records[?@.active == true && @.score >= 50.0].id";
 
 const Bench = struct {
     name: []const u8,
@@ -64,6 +77,9 @@ const benches = [_]Bench{
     .{ .name = "json.dom.parse", .run = bench_dom_parse },
     .{ .name = "json.write.minified", .run = bench_write },
     .{ .name = "json.parse(T)", .run = bench_parse_typed },
+    .{ .name = "path.pointer.resolve", .run = bench_pointer },
+    .{ .name = "path.jsonpath $..*", .run = bench_descendants },
+    .{ .name = "path.jsonpath filter", .run = bench_filter },
 };
 
 pub fn main(init: std.process.Init) !void {
@@ -88,11 +104,17 @@ pub fn main(init: std.process.Init) !void {
             if (std.mem.find(u8, bench.name, needle) == null) continue;
         }
         const result = try bench.run(init.gpa, init.io, document);
-        try out.print("{s:<24} {d:>9.1} MB/s {d:>7.2} arena bytes/input byte\n", .{
+        try out.print("{s:<24} {d:>9.1} MB/s {d:>7.2} arena bytes/input byte", .{
             bench.name,
             megabytes_per_second(result.bytes_total, result.elapsed_ns),
             arena_ratio(result.arena_bytes, document.len),
         });
+        if (result.matches_total > 0) {
+            try out.print(" {d:>9.1} ns/match", .{
+                nanoseconds_per_match(result.matches_total, result.elapsed_ns),
+            });
+        }
+        try out.writeByte('\n');
     }
     try out.flush();
     assert(out.end == 0); // Postcondition: output is fully drained before returning.
@@ -187,6 +209,132 @@ fn parse_typed_once(gpa: Allocator, document: []const u8) BenchError!u64 {
     return tree.arena.queryCapacity();
 }
 
+/// Parses `document` into `tree` and returns the root, which borrows from the tree.
+fn parse_root(tree: *sigil.core.ValueTree, document: []const u8) BenchError!sigil.core.Value {
+    var diag = sigil.core.Diagnostics.init(0, 0, "", null);
+    return sigil.json.parse_value(tree, document, parse_options, &diag) catch |err| {
+        return fail_parse(err);
+    };
+}
+
+fn bench_pointer(gpa: Allocator, io: std.Io, document: []const u8) BenchError!Result {
+    var tree: sigil.core.ValueTree = undefined;
+    tree.init(gpa);
+    defer tree.deinit();
+
+    const root = try parse_root(&tree, document);
+    const records = sigil.path.pointer.resolve(&root, try pointer_parse("/records")) orelse {
+        return error.BenchFailed;
+    };
+    const record_count: u32 = switch (records.*) {
+        .array => |items| @intCast(items.len),
+        else => return error.BenchFailed,
+    };
+    assert(record_count > 0);
+
+    const hits = try pointer_pass(&root, record_count); // Warm-up: caches.
+    assert(hits == pointer_lookups); // Every record has `owner.x`.
+    const start = std.Io.Clock.awake.now(io);
+    for (0..iterations) |_| {
+        const got = try pointer_pass(&root, record_count);
+        assert(got == hits);
+    }
+    return .{
+        .bytes_total = 0,
+        .elapsed_ns = elapsed_ns_since(io, start),
+        .arena_bytes = 0,
+        .matches_total = @as(u64, iterations) * hits,
+    };
+}
+
+/// Parses and resolves `/records/<i>/owner/x` for `pointer_lookups` spread-out indexes and
+/// returns how many resolved.
+fn pointer_pass(root: *const sigil.core.Value, record_count: u32) BenchError!u32 {
+    var hits: u32 = 0;
+    var text_buffer: [64]u8 = undefined;
+    for (0..pointer_lookups) |lookup| {
+        const index: u32 = @intCast((lookup * 7919) % record_count);
+        const text = std.fmt.bufPrint(&text_buffer, "/records/{d}/owner/x", .{index}) catch {
+            return error.BenchFailed;
+        };
+        const pointer = try pointer_parse(text);
+        if (sigil.path.pointer.resolve(root, pointer) != null) hits += 1;
+    }
+    return hits;
+}
+
+fn pointer_parse(text: []const u8) BenchError!sigil.path.pointer.Pointer {
+    const Segment = sigil.path.pointer.Segment;
+    // The returned `Pointer` borrows its segments, so the buffer must outlive this call; it is
+    // static because the harness is single-threaded and a pointer is used before the next parse.
+    const state = struct {
+        var buffer: [sigil.path.pointer.segments_max]Segment = undefined;
+    };
+    var diag = sigil.core.Diagnostics.init(0, 0, "", null);
+    return sigil.path.pointer.parse(text, &state.buffer, &diag) catch |err| {
+        std.log.err("bench: pointer failed: {s}: {s}", .{ @errorName(err), diag.message() });
+        return error.BenchFailed;
+    };
+}
+
+fn bench_descendants(gpa: Allocator, io: std.Io, document: []const u8) BenchError!Result {
+    return bench_select(gpa, io, document, query_descendants);
+}
+
+fn bench_filter(gpa: Allocator, io: std.Io, document: []const u8) BenchError!Result {
+    return bench_select(gpa, io, document, query_filter);
+}
+
+/// Compiles `query` once, then selects it from the parsed document `iterations` times.
+fn bench_select(
+    gpa: Allocator,
+    io: std.Io,
+    document: []const u8,
+    query: []const u8,
+) BenchError!Result {
+    var tree: sigil.core.ValueTree = undefined;
+    tree.init(gpa);
+    defer tree.deinit();
+
+    const root = try parse_root(&tree, document);
+
+    var program: sigil.path.jsonpath.Program = undefined;
+    var diag = sigil.core.Diagnostics.init(0, 0, "", null);
+    sigil.path.jsonpath.compile(&program, query, &diag) catch |err| {
+        std.log.err("bench: compile failed: {s}: {s}", .{ @errorName(err), diag.message() });
+        return error.BenchFailed;
+    };
+
+    const out = try gpa.alloc(*const sigil.core.Value, select_out_max);
+    defer gpa.free(out);
+
+    const matches = try select_once(&program, &root, out); // Warm-up: caches.
+    assert(matches > 0);
+    const start = std.Io.Clock.awake.now(io);
+    for (0..iterations) |_| {
+        const got = try select_once(&program, &root, out);
+        assert(got == matches);
+    }
+    return .{
+        .bytes_total = @as(u64, iterations) * document.len,
+        .elapsed_ns = elapsed_ns_since(io, start),
+        .arena_bytes = 0,
+        .matches_total = @as(u64, iterations) * matches,
+    };
+}
+
+fn select_once(
+    program: *const sigil.path.jsonpath.Program,
+    root: *const sigil.core.Value,
+    out: []*const sigil.core.Value,
+) BenchError!u64 {
+    const selected = sigil.path.jsonpath.select(program, root, out) catch |err| {
+        std.log.err("bench: select failed: {s}", .{@errorName(err)});
+        return error.BenchFailed;
+    };
+    return selected.len;
+}
+
 fn fail_parse(err: sigil.json.ParseValueError) BenchError {
     std.log.err("bench: parse failed: {s}", .{@errorName(err)});
     return switch (err) {
@@ -263,6 +411,12 @@ fn megabytes_per_second(bytes: u64, elapsed_ns: u64) f64 {
     return bytes_per_ns * 1000.0;
 }
 
+/// Nanoseconds per node; `matches` must be positive.
+fn nanoseconds_per_match(matches: u64, elapsed_ns: u64) f64 {
+    assert(matches > 0);
+    return @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(matches));
+}
+
 fn arena_ratio(arena_bytes: u64, input_bytes: usize) f64 {
     assert(input_bytes > 0);
     return @as(f64, @floatFromInt(arena_bytes)) / @as(f64, @floatFromInt(input_bytes));
@@ -273,6 +427,8 @@ test "bench: megabytes_per_second is zero-safe and exact" {
     try std.testing.expectEqual(@as(f64, 1000), megabytes_per_second(1, 1));
     try std.testing.expectEqual(@as(f64, 500), megabytes_per_second(1, 2));
     try std.testing.expectEqual(@as(f64, 2), arena_ratio(20, 10));
+    try std.testing.expectEqual(@as(f64, 4), nanoseconds_per_match(5, 20));
+    try std.testing.expectEqual(@as(f64, 0.5), nanoseconds_per_match(2, 1));
 }
 
 test "bench: the generated document is deterministic, valid, and long enough" {
@@ -298,9 +454,41 @@ test "bench: each benchmark measures bytes and time over the generated document"
 
     for (benches) |bench| {
         const result = try bench.run(std.testing.allocator, std.testing.io, document);
-        try std.testing.expect(result.bytes_total > 0);
+        const is_path = std.mem.startsWith(u8, bench.name, "path.");
+        const is_pointer = std.mem.eql(u8, bench.name, "path.pointer.resolve");
+        try std.testing.expectEqual(!is_pointer, result.bytes_total > 0);
         try std.testing.expect(result.elapsed_ns > 0);
-        const has_arena = !std.mem.eql(u8, bench.name, "json.write.minified");
+        const has_arena = !std.mem.eql(u8, bench.name, "json.write.minified") and !is_path;
         try std.testing.expectEqual(has_arena, result.arena_bytes > 0);
+        try std.testing.expectEqual(is_path, result.matches_total > 0);
     }
+}
+
+test "bench: the pointer and query benchmarks match what the document holds" {
+    const document = try generate_document(std.testing.allocator, document_seed);
+    defer std.testing.allocator.free(document);
+
+    var tree: sigil.core.ValueTree = undefined;
+    tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    const root = try parse_root(&tree, document);
+    const out = try std.testing.allocator.alloc(*const sigil.core.Value, select_out_max);
+    defer std.testing.allocator.free(out);
+
+    var program: sigil.path.jsonpath.Program = undefined;
+    var diag = sigil.core.Diagnostics.init(0, 0, "", null);
+    try sigil.path.jsonpath.compile(&program, query_filter, &diag);
+    const filtered = try select_once(&program, &root, out);
+    try sigil.path.jsonpath.compile(&program, "$.records[*].id", &diag);
+    const all = try select_once(&program, &root, out);
+
+    // About a quarter of the records are active with a score of at least 50; none fail to have
+    // an `id`, so the filter must select some but not all of them.
+    try std.testing.expect(filtered > 0);
+    try std.testing.expect(filtered < all);
+    try std.testing.expectEqual(
+        @as(u64, pointer_lookups),
+        try pointer_pass(&root, @intCast(all)),
+    );
 }

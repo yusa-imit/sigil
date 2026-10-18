@@ -58,7 +58,7 @@ asking for it yet, so it waits.
       checked and committed beside it, as JSONTestSuite was) and run it from `zig build
       test` with the pass, fail and pinned-unsupported counts asserted, never "no crash".
       Verification: suite counts printed by the test and recorded in the CHANGELOG.
-- [ ] **Benchmarks.** `zig build bench` adds Pointer resolve, JSONPath `$..*` and a filter
+- [x] **Benchmarks.** `zig build bench` adds Pointer resolve, JSONPath `$..*` and a filter
       query over the plan 004 document; MB/s and ns per match recorded in
       `docs/plans/000-inherited.md`. Measure only; tuning is its own plan.
 - [ ] **Release v0.4.0.** Tick 2E in `000-inherited.md`, CHANGELOG `[0.4.0]`, `build.zig.zon`

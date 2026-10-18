@@ -63,6 +63,9 @@
 | 2026-10-13 | JSON 파싱 (DOM, 1MB 생성 문서) | 약 145-175 MB/s | > 500 MB/s | `json.dom.parse`, arena 5.67 B/입력 B |
 | 2026-10-13 | JSON 파싱 (reflect → struct) | 약 165 MB/s | > 300 MB/s | `json.parse(T)`, arena 5.67 B/입력 B |
 | 2026-10-13 | JSON 직렬화 (minified) | 약 480-490 MB/s | > 800 MB/s | `json.write.minified` |
+| 2026-10-18 | JSON Pointer 파싱 + resolve (`/records/<i>/owner/x`) | 약 31 ns/조회 | 미정 | `path.pointer.resolve`, 조회마다 파싱 포함 |
+| 2026-10-18 | JSONPath `$..*` (select) | 약 2150 MB/s, 약 5 ns/노드 | 미정 | `path.jsonpath $..*`, 컴파일 제외 |
+| 2026-10-18 | JSONPath 필터 (`$.records[?@.active == true && @.score >= 50.0].id`) | 약 2200 MB/s, 약 109 ns/일치 | 미정 | `path.jsonpath filter`, 일치 = 선택된 `id` 노드 |
 
 측정 조건: Apple Silicon 로컬, `zig build bench` (ReleaseFast), 시드 고정 약 1 MiB 생성 문서(twitter.json
 아님), 16회 반복, 워밍업 1회 제외, 수 회 실행 중 근사 중앙값. 첫 벤치는 실행 순서에 따라 최대 약 20% 흔들린다. 목표 미달은 plan 004의
