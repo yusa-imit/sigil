@@ -6,6 +6,12 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-19
+
+Plan 005 (Phase 2E): `sigil.path` is real. JSON Pointer, Merge Patch, Patch and a JSONPath
+subset (everything but `match`/`search`) over `Value`, with no recursion and no allocation after
+setup.
+
 ### Added
 
 - ADR 0004, the path contract (plan 005 item 1): borrowed read results, path-copy atomic Patch

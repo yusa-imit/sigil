@@ -10,11 +10,13 @@ sigil은 하나의 `Value` 중간 표현과 comptime 리플렉션(struct ↔ Val
 
 ---
 
-## Status: `core`, `reflect` and `json` are implemented; other formats are stubs
+## Status: `core`, `reflect`, `json` and `path` are implemented; other formats are stubs
 
-`sigil.core`, `sigil.reflect` and `sigil.json` are implemented and tested: parse and stringify
-between Zig types and `Value`, and read and write JSON with line:col diagnostics (JSONTestSuite,
-a seeded round-trip property, benchmarks in `docs/plans/000-inherited.md`). Every other module
+`sigil.core`, `sigil.reflect`, `sigil.json` and `sigil.path` are implemented and tested: parse and
+stringify between Zig types and `Value`, read and write JSON with line:col diagnostics
+(JSONTestSuite, a seeded round-trip property), and query or patch a `Value` with JSON Pointer,
+Merge Patch, Patch and JSONPath (the RFC 9535 compliance suite; `match`/`search` are unsupported).
+Benchmarks are in `docs/plans/000-inherited.md`. Every other module
 in the table below is an empty stub that declares only its error set; no TOML, YAML, MessagePack,
 CBOR, Protobuf or CSV can be read or written yet. `docs/PRD.md` has the full design. The API is
 unstable and may change between 0.x minors.
@@ -26,7 +28,7 @@ unstable and may change between 0.x minors.
 | `sigil.core` | Implemented | Value union, arena-owned ValueTree, decimal Number parsing, Timestamp, Diagnostics (line:col), strict UTF-8 validation and escape primitives. |
 | `sigil.reflect` | Implemented (`Schema(T)` planned) | comptime struct ↔ Value mapping: parse(T), stringify(T), field options (rename, defaults, deny_unknown), custom hooks. Schema(T) validation is not built yet. |
 | `sigil.json` | Implemented | RFC 8259 strict pull scanner, DOM builder, minified/pretty writer, `parse(T)`/`stringify`, `parseFile`/`stringifyFile` with line:col diagnostics. Direct-to-struct streaming parse is not built yet. |
-| `sigil.path` | Planned | JSON Pointer (RFC 6901), JSONPath (RFC 9535 subset), JSON Patch (RFC 6902), Merge Patch (RFC 7386) — all over Value. |
+| `sigil.path` | Implemented | JSON Pointer (RFC 6901), JSONPath (RFC 9535 without `match`/`search`), JSON Patch (RFC 6902), Merge Patch (RFC 7386) — all over Value, no recursion, no allocation after setup. |
 | `sigil.toml` | Planned | TOML v1.0.0 lexer, parser, writer (order-preserving). toml-test suite. |
 | `sigil.yaml` | Planned | YAML 1.2 core-schema subset: block/flow collections, scalars, anchors/aliases (bounded), multi-doc. |
 | `sigil.msgpack` | Planned | MessagePack encoder/decoder, all types + ext, zero-copy bin/str. |
@@ -37,7 +39,7 @@ unstable and may change between 0.x minors.
 
 ## Install
 
-The latest tag is v0.3.0. Fetch it with `zig fetch --save <release tarball URL>` from the
+The latest tag is v0.4.0. Fetch it with `zig fetch --save <release tarball URL>` from the
 [releases page](https://github.com/yusa-imit/sigil/releases), then:
 
 ```zig
