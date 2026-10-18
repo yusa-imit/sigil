@@ -61,7 +61,7 @@ asking for it yet, so it waits.
 - [x] **Benchmarks.** `zig build bench` adds Pointer resolve, JSONPath `$..*` and a filter
       query over the plan 004 document; MB/s and ns per match recorded in
       `docs/plans/000-inherited.md`. Measure only; tuning is its own plan.
-- [ ] **Release v0.4.0.** Tick 2E in `000-inherited.md`, CHANGELOG `[0.4.0]`, `build.zig.zon`
+- [x] **Release v0.4.0.** Tick 2E in `000-inherited.md`, CHANGELOG `[0.4.0]`, `build.zig.zon`
       and `sigil.version` 0.3.0 -> 0.4.0 in one PR, then tag and `gh release create`.
       Verification: `gh release view v0.4.0` succeeds.
 

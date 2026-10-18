@@ -24,7 +24,7 @@
 - [x] 2B `json/dom.zig`
 - [x] 2C `json/writer.zig`
 - [ ] 2D `json/reflect.zig` — streaming to struct
-- [ ] 2E `path/{pointer,jsonpath,patch,merge}.zig`
+- [x] 2E `path/{pointer,jsonpath,patch,merge}.zig`
 - [ ] 2F fuzz + JSONTestSuite
 
 ## Phase 3 — TOML & YAML
