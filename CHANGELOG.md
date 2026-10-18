@@ -43,6 +43,9 @@ All notable changes to this project are documented in this file. The format foll
   jsonpath-standard compliance suite (`tests/jsonpath/cts.json`, commit 20ebdcc, BSD-2 license
   and notice beside it). Counts, asserted: 715 tests (249 invalid, 466 valid), 659 pass, 56
   pinned unsupported (`match`/`search`, 24 + 32 tagged), 0 divergent.
+- Path benchmarks (plan 005 item 9): `zig build bench` adds `path.pointer.resolve`,
+  `path.jsonpath $..*` and `path.jsonpath filter` over the seeded ~1 MiB document, printing ns per
+  match beside MB/s; numbers recorded in `docs/plans/000-inherited.md` (measured, not tuned).
 
 ### Removed
 
