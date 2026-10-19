@@ -18,7 +18,7 @@ consumer asking for it; 2F stays out except the TOML fuzz in item 10 (PRD §6: p
 
 ## Scope
 
-- [ ] **ADR 0005 — TOML contract (design only, `architect`; return the file text).** Pins:
+- [x] **ADR 0005 — TOML contract (design only, `architect`; return the file text).** Pins:
       (a) the four datetime kinds vs `core.Timestamp` (`seconds`, `nanoseconds`,
       `offset_minutes: ?i16`), which cannot tell a local date or local time from a local
       datetime, so round-trip fails without a change: a kind tag or another shape, and the
