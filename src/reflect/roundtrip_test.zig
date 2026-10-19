@@ -135,6 +135,7 @@ fn gen_text(rng: std.Random, arena: std.mem.Allocator) std.mem.Allocator.Error![
 
 fn gen_timestamp(rng: std.Random) core.Timestamp {
     const stamp: core.Timestamp = .{
+        .kind = .instant,
         .seconds = rng.int(i64),
         .nanoseconds = rng.uintLessThan(u32, 1_000_000_000),
         .offset_minutes = if (rng.boolean()) rng.intRangeAtMost(i16, -1439, 1439) else null,
@@ -476,7 +477,7 @@ fn leaf_sample() Leaf {
         .name = "n",
         .mode = .fast,
         .note = null,
-        .stamp = .{ .seconds = 1, .nanoseconds = 2, .offset_minutes = null },
+        .stamp = .{ .kind = .instant, .seconds = 1, .nanoseconds = 2, .offset_minutes = null },
         .tenths = .{ .units = 4 },
     };
 }

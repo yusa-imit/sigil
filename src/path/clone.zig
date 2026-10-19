@@ -205,7 +205,12 @@ test "clone: strings, bytes, keys and buffers are fresh allocations" {
     try testing.expect(map.entries.ptr != inner.entries.ptr);
     try testing.expect(map.items()[0].key.ptr != inner.items()[0].key.ptr);
     try testing.expect(map.get("key").?.string.ptr != text.ptr);
-    const when: core.value.Timestamp = .{ .seconds = 5, .nanoseconds = 7, .offset_minutes = -60 };
+    const when: core.value.Timestamp = .{
+        .kind = .instant,
+        .seconds = 5,
+        .nanoseconds = 7,
+        .offset_minutes = -60,
+    };
     const stamp: Value = .{ .timestamp = when };
     try testing.expect(try core.value.eql(stamp, try deep(&tree, stamp, 0)));
 }

@@ -239,7 +239,12 @@ test "Timestamp and Value: Timestamp as is, Value deep-copied into the tree" {
     rig.init();
     defer rig.deinit();
 
-    const stamp: core.Timestamp = .{ .seconds = 5, .nanoseconds = 6, .offset_minutes = -60 };
+    const stamp: core.Timestamp = .{
+        .kind = .instant,
+        .seconds = 5,
+        .nanoseconds = 6,
+        .offset_minutes = -60,
+    };
     try expect_value(.{ .timestamp = stamp }, try ok(&rig, core.Timestamp, stamp));
 
     var scratch = rig_mod.Rig{ .tree = undefined, .diag = sentinel() };

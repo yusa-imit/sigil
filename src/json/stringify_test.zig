@@ -369,7 +369,12 @@ fn fail_unrepresentable() !void {
     const unrepresentable = error.Unrepresentable;
     const bytes_message = "bytes cannot be written as JSON";
     try expect_fail(Value, .{ .bytes = "ab" }, minified, unrepresentable, bytes_message, false);
-    const stamp: core.Timestamp = .{ .seconds = 0, .nanoseconds = 0, .offset_minutes = null };
+    const stamp: core.Timestamp = .{
+        .kind = .instant,
+        .seconds = 0,
+        .nanoseconds = 0,
+        .offset_minutes = null,
+    };
     const stamp_message = "timestamp cannot be written as JSON";
     try expect_fail(core.Timestamp, stamp, minified, unrepresentable, stamp_message, false);
     const nan = std.math.nan(f64);
