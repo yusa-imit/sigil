@@ -3,7 +3,9 @@
 //! (TOML now, CBOR tag 0 later); format modules may not import each other, so it lives here.
 //!
 //! Invariants: years are `0000..9999`; a parsed `Timestamp` satisfies `check_invariants`;
-//! `format(parse(text))` is the canonical spelling and `parse(format(stamp))` returns `stamp`.
+//! `format(parse(text))` is the canonical spelling, and `parse(format(stamp))` returns `stamp`
+//! except for an `instant` with no offset (CBOR tag 1), which is spelled `Z` and reads back
+//! with `offset_minutes == 0`.
 //! Allocation: none. Parsing is O(text.len); formatting writes at most `text_max` bytes into a
 //! caller buffer. Cost per call: a handful of integer divisions, no tables.
 
@@ -12,9 +14,9 @@ const assert = std.debug.assert;
 const value = @import("value.zig");
 const Timestamp = value.Timestamp;
 
-/// Text that is not a datetime of the kinds in ADR 0005, names an impossible calendar field
-/// (`2023-02-29`, hour 24, a `:60` leap second), or a `Timestamp` whose civil year falls outside
-/// `0000..9999` and therefore has no four-digit spelling.
+/// Text that is not a datetime of the kinds in ADR 0005, or names an impossible calendar field
+/// (`2023-02-29`, hour 24, a `:60` leap second); also `format` given a `Timestamp` whose civil
+/// year falls outside `0000..9999` (a value from a caller, not text) and has no spelling.
 pub const Error = error{InvalidDatetime};
 
 /// Longest text `format` writes: `9999-12-31T23:59:59.999999999+23:59`.
@@ -22,6 +24,11 @@ pub const text_max: u32 = 35;
 /// Days from 1970-01-01 to 0000-01-01 (negative) and to 9999-12-31.
 pub const days_min: i64 = -719_528;
 pub const days_max: i64 = 2_932_896;
+
+/// Documents a condition that is legitimately sometimes true (Tiger Style 1.6).
+fn maybe(ok: bool) void {
+    _ = ok;
+}
 
 const seconds_per_day: i64 = 86_400;
 const fraction_digits_max: u32 = 9;
@@ -39,6 +46,7 @@ pub const Civil = struct {
 pub fn is_leap_year(year: u16) bool {
     assert(year <= 9999);
     const leap = if (year % 400 == 0) true else if (year % 100 == 0) false else year % 4 == 0;
+    if (year % 4 != 0) assert(!leap);
     if (year % 400 == 0) assert(leap);
     return leap;
 }
@@ -106,15 +114,17 @@ pub fn civil_from_days(days: i64) Civil {
 /// `instant`. Fraction digits past nine are truncated. The result satisfies `check_invariants`.
 pub fn parse(text: []const u8) Error!Timestamp {
     if (text.len < 8) return error.InvalidDatetime;
-    assert(text.len >= 8);
 
     const stamp = if (text[2] == ':') try parse_time_only(text) else try parse_dated(text);
     stamp.check_invariants();
     assert((stamp.kind == .instant) == (stamp.offset_minutes != null));
+    assert(stamp.nanoseconds < 1_000_000_000);
     return stamp;
 }
 
 fn parse_time_only(text: []const u8) Error!Timestamp {
+    assert(text.len >= 8);
+    assert(text[2] == ':');
     const time = try parse_time(text);
     if (time.len != text.len) return error.InvalidDatetime;
     return .{
@@ -126,6 +136,8 @@ fn parse_time_only(text: []const u8) Error!Timestamp {
 }
 
 fn parse_dated(text: []const u8) Error!Timestamp {
+    assert(text.len >= 8);
+    assert(text[2] != ':');
     const civil = try parse_date(text);
     const midnight = days_from_civil(civil) * seconds_per_day;
     if (text.len == 10) {
@@ -163,6 +175,7 @@ fn parse_dated(text: []const u8) Error!Timestamp {
 }
 
 fn parse_date(text: []const u8) Error!Civil {
+    assert(text.len >= 8);
     if (text.len < 10) return error.InvalidDatetime;
     if (text[4] != '-') return error.InvalidDatetime;
     if (text[7] != '-') return error.InvalidDatetime;
@@ -185,6 +198,7 @@ const Time = struct {
 };
 
 fn parse_time(text: []const u8) Error!Time {
+    maybe(text.len == 0);
     if (text.len < 8) return error.InvalidDatetime;
     if (text[2] != ':') return error.InvalidDatetime;
     if (text[5] != ':') return error.InvalidDatetime;
@@ -197,6 +211,7 @@ fn parse_time(text: []const u8) Error!Time {
     if (second > 59) return error.InvalidDatetime;
 
     var len: usize = 8;
+    assert(len <= text.len);
     var nanoseconds: u32 = 0;
     if (len < text.len and text[len] == '.') {
         const fraction = try parse_fraction(text[len + 1 ..]);
@@ -313,13 +328,20 @@ fn format_time(stamp: Timestamp, out: []u8) usize {
     out[8] = '.';
     put_digits(out[9..18], stamp.nanoseconds);
     var len: usize = 18;
-    while (out[len - 1] == '0') len -= 1;
+    assert(out[len - 1] != 0);
+    for (0..fraction_digits_max) |_| {
+        if (out[len - 1] != '0') break;
+        len -= 1;
+    }
     assert(len > 9);
     return len;
 }
 
 /// Writes `Z` or `+HH:MM`/`-HH:MM` and returns its length.
 fn format_offset(offset_minutes: i16, out: []u8) usize {
+    assert(out.len >= 6);
+    assert(offset_minutes >= -1439);
+    assert(offset_minutes <= 1439);
     if (offset_minutes == 0) {
         out[0] = 'Z';
         return 1;
@@ -523,6 +545,19 @@ test "timestamp: format rejects a civil year outside 0000..9999" {
     // whose local spelling still has four digits.
     const edge = try parse("9999-12-31T23:59:59-00:01");
     try expect_text("9999-12-31T23:59:59-00:01", edge);
+}
+
+test "timestamp: an instant without an offset is spelled Z and reads back as offset 0" {
+    const none: Timestamp = .{
+        .kind = .instant,
+        .seconds = 86_400,
+        .nanoseconds = 0,
+        .offset_minutes = null,
+    };
+    try expect_text("1970-01-02T00:00:00Z", none);
+    const back = try parse("1970-01-02T00:00:00Z");
+    try testing.expectEqual(@as(?i16, 0), back.offset_minutes);
+    try testing.expectEqual(none.seconds, back.seconds);
 }
 
 test "timestamp: check_invariants accepts a parsed value of every kind" {
