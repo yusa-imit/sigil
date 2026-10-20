@@ -140,6 +140,22 @@ test "scalar: a float is never an integer and an integer never a float" {
     try expect(std.meta.activeTag(try scalar.parse("0x1")) == .int);
 }
 
+test "scalar: a bad radix digit wins over overflow" {
+    try expect_failure("0xFFFFFFFFFFFFFFFFFg", error.InvalidNumber);
+    try expect_failure("0x8000000000000000_", error.InvalidNumber);
+    try expect_failure("0x8000000000000000__1", error.InvalidNumber);
+    try expect_failure("0b1" ++ "0" ** 70 ++ "2", error.InvalidNumber);
+    try expect_failure("+_1", error.InvalidNumber);
+    try expect_failure("1e+_5", error.InvalidNumber);
+}
+
+test "scalar: the underscore buffer edge is exactly number_text_max" {
+    const edge = "0." ++ "0_" ** 254 ++ "01";
+    try expectEqual(@as(usize, scalar.number_text_max), edge.len);
+    try expect_float(edge, 1e-256);
+    try expect_failure(edge ++ "0", error.InvalidNumber);
+}
+
 test "scalar: text longer than the underscore buffer" {
     const digits = "1_" ++ "0_" ** 300 ++ "1";
     try expect(digits.len > scalar.number_text_max);
@@ -208,6 +224,7 @@ test "lexer: a date alone stays a scalar of its own" {
     try expectEqualStrings("1979-05-27", try first_scalar("1979-05-27\t07:32:00"));
     try expectEqualStrings("1979-05-27", try first_scalar("1979-05-27 7:32:00"));
     try expectEqualStrings("1979-05-27", try first_scalar("1979-05-27 07"));
+    try expectEqualStrings("1979-05-27 07:", try first_scalar("1979-05-27 07:"));
     try expectEqualStrings("1979-05-27", try first_scalar("1979-05-27 \n07:32:00"));
 }
 
