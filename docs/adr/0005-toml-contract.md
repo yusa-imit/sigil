@@ -149,7 +149,8 @@ these.
   `TooDeep` points at the segment or bracket that exceeds the limit.
 - **Input** longer than `bytes_max` (a `u32`, at most `Lexer.input_len_max` = `maxInt(u32) - 16`,
   headroom for the lexer's `offset + 8` lookahead) is `InputTooLarge` before any
-  byte is read. Tokens are bounded by input; there is no other size limit. Lexer string and number
+  byte is read. Tokens are bounded by input; the one other limit: a number containing `_` and longer than
+  `number_text_max` (512) is `InvalidNumber`, because underscores are stripped into that buffer. Lexer string and number
   scratch is one bounded buffer of `number_text_max` bytes (numbers) and decodes strings straight
   into the tree arena (a decoded string is never longer than its source, ADR 0003 §1).
 - **Lines**: LF and CRLF end a line; a bare CR is `UnexpectedToken`. A BOM is `UnexpectedToken`.

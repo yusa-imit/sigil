@@ -9,7 +9,8 @@
 //! TOML is context sensitive at the byte level: `1.5` is a key path in a header and one number
 //! in a value. The caller (the parser) therefore passes a `Mode` on every call: `.key` splits
 //! bare keys at `.` and recognises `[[` and `]]`; `.value` returns everything up to a delimiter
-//! as one `.scalar` run (item 4 classifies it) and always returns `[` and `]` singly.
+//! as one `.scalar` run and always returns `[` and `]` singly. `scalar.parse` classifies the
+//! run; a date, one space and a time (`1979-05-27 07:32:00`) are one run.
 //!
 //! A string token is validated whole before it is returned: strict UTF-8, no raw control
 //! character, escape syntax (`\b \t \n \f \r \" \\ \uXXXX \UXXXXXXXX`, and in a multi-line basic
@@ -49,7 +50,7 @@ pub const Kind = enum(u8) {
     table_array_close,
     /// One or more of `A-Za-z0-9_-`, `.key` mode only.
     bare_key,
-    /// A run up to a delimiter, `.value` mode only; the parser classifies it.
+    /// A run up to a delimiter, `.value` mode only; `scalar.parse` classifies it.
     scalar,
     string_basic,
     string_literal,
@@ -225,12 +226,24 @@ pub const Lexer = struct {
         return lexer.take(.bare_key, index - start);
     }
 
-    /// A scalar run: everything up to a blank, a line ending or one of `, ] } #`.
+    /// A scalar run: everything up to a blank, a line ending or one of `, ] } #`. A date, one
+    /// space and a time (`1979-05-27 07:32:00`) are one run: the space is the one blank TOML
+    /// allows inside a token.
     fn scan_scalar(lexer: *Lexer, diag: *Diagnostics) ScanError!Token {
         const input = lexer.input;
         const start = lexer.offset;
         assert(start < input.len);
-        var index = start;
+        var index = try lexer.scalar_end(diag, start);
+        if (joins_time(input, start, index)) index = try lexer.scalar_end(diag, index + 1);
+        assert(index > start);
+        return lexer.take(.scalar, index - start);
+    }
+
+    /// The end of the scalar run that starts at `from`; a byte the grammar forbids is a fault.
+    fn scalar_end(lexer: *Lexer, diag: *Diagnostics, from: u32) ScanError!u32 {
+        const input = lexer.input;
+        assert(from < input.len);
+        var index = from;
         while (index < input.len) : (index += 1) {
             const byte = input[index];
             switch (byte) {
@@ -241,8 +254,8 @@ pub const Lexer = struct {
                 return lexer.fail(diag, error.UnexpectedToken, index);
             }
         }
-        assert(index > start);
-        return lexer.take(.scalar, index - start);
+        assert(index >= from);
+        return index;
     }
 
     /// A basic (`"`) or literal (`'`) string, single-line or multi-line.
@@ -482,6 +495,22 @@ fn check_unicode_escape(input: []const u8, backslash: u32, digits: u32) Escape {
         return .{ .failed = .{ .err = error.LoneSurrogate, .offset = backslash } };
     }
     return .{ .next = hex_start + digits };
+}
+
+/// True when `input[start..end]` is `dddd-dd-dd` and one space plus `dd:` follows it.
+fn joins_time(input: []const u8, start: u32, end: u32) bool {
+    assert(start < end);
+    assert(end <= input.len);
+    if (end - start != 10) return false;
+    if (end + 3 >= input.len or input[end] != ' ') return false;
+    const date = input[start..end];
+    for (date, 0..) |byte, index| {
+        const dash = index == 4 or index == 7;
+        if (dash != (byte == '-')) return false;
+        if (!dash and !std.ascii.isDigit(byte)) return false;
+    }
+    const time = input[end + 1 ..][0..3];
+    return std.ascii.isDigit(time[0]) and std.ascii.isDigit(time[1]) and time[2] == ':';
 }
 
 pub fn is_string(kind: Kind) bool {

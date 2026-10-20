@@ -44,7 +44,7 @@ consumer asking for it; 2F stays out except the TOML fuzz in item 10 (PRD §6: p
       newlines (LF, CRLF); basic, literal, multi-line strings with `\uXXXX`, `\UXXXXXXXX`,
       line-ending backslash; control characters rejected. Tests: every string example of the
       TOML 1.0.0 spec, each error variant provoked with its line:col, surrogate escape refused.
-- [ ] **`toml/lexer.zig` — scalars.** Integers (sign, `_` only between digits, `0x`/`0o`/`0b`,
+- [x] **`toml/lexer.zig` — scalars.** Integers (sign, `_` only between digits, `0x`/`0o`/`0b`,
       no leading zero) via `core.number` after stripping `_` into a bounded buffer; floats
       (exponent, `inf`, `nan`, signs); booleans; the four datetimes via `core/timestamp.zig`.
       Tests: spec integer/float/datetime tables, i64 min/max and one past (typed error, never
