@@ -11,8 +11,10 @@ All notable changes to this project are documented in this file. The format foll
 - `sigil.core.timestamp` (plan 006 item 2): proleptic Gregorian civil date <-> days and RFC 3339
   / TOML datetime `parse` and `format` for all four kinds, shared with future CBOR tag 0.
 - `sigil.toml.lexer` (plan 006 item 3): a pull lexer for TOML structure, comments, keys and the
-  four string forms (`Lexer.next` with `Mode` `.key`/`.value`, `decode_string`); scalars follow
-  in item 4.
+  four string forms (`Lexer.next` with `Mode` `.key`/`.value`, `decode_string`).
+- `sigil.toml.scalar` (plan 006 item 4): `parse` classifies a lexer scalar run into a `Value`
+  (booleans, `i64` integers incl. `0x`/`0o`/`0b`, floats, `inf`/`nan`, the four datetimes); the
+  lexer now returns `date time` with one space as a single run.
 
 ### Changed
 

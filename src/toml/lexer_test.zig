@@ -143,8 +143,7 @@ test "lexer: key mode splits at dots, value mode keeps them in one run" {
         step(.value, .scalar, "1.5e3"),
         step(.value, .scalar, ".5"),
         step(.value, .scalar, "+inf"),
-        step(.value, .scalar, "1979-05-27"),
-        step(.value, .scalar, "07:32:00Z"),
+        step(.value, .scalar, "1979-05-27 07:32:00Z"),
         step(.value, .end, ""),
     });
     try expect_steps("\"a b\".'c'", &.{

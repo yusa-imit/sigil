@@ -10,6 +10,7 @@
 const std = @import("std");
 
 pub const lexer = @import("toml/lexer.zig");
+pub const scalar = @import("toml/scalar.zig");
 
 /// Module-level error set. Extend as functionality lands; keep names descriptive
 /// (`error.ChecksumMismatch`, not `error.Invalid`).
@@ -19,6 +20,7 @@ pub const Error = error{
 
 test {
     _ = @import("toml/lexer_test.zig");
+    _ = @import("toml/scalar_test.zig");
 }
 
 test "toml: module compiles" {
