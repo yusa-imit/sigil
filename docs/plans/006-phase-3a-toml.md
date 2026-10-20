@@ -39,7 +39,7 @@ consumer asking for it; 2F stays out except the TOML fuzz in item 10 (PRD §6: p
       Tests: 0001-01-01 and 9999-12-31, Feb 29 in 2000 vs 1900, `2023-02-29` rejected,
       offsets +-23:59, 9 fraction digits; model test against a naive day counter, 1,000 seeds.
       `reflect` and `json.writer` keep compiling and passing (`zig build test`).
-- [ ] **`toml/lexer.zig` — structure and strings.** Pull lexer over one complete slice
+- [x] **`toml/lexer.zig` — structure and strings.** Pull lexer over one complete slice
       (ADR 0003 §1 shape): bare and quoted keys, `.`, `=`, `[`, `[[`, `,`, `{`, comments,
       newlines (LF, CRLF); basic, literal, multi-line strings with `\uXXXX`, `\UXXXXXXXX`,
       line-ending backslash; control characters rejected. Tests: every string example of the

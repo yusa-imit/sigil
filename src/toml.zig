@@ -9,11 +9,17 @@
 
 const std = @import("std");
 
+pub const lexer = @import("toml/lexer.zig");
+
 /// Module-level error set. Extend as functionality lands; keep names descriptive
 /// (`error.ChecksumMismatch`, not `error.Invalid`).
 pub const Error = error{
     NotImplemented,
 };
+
+test {
+    _ = @import("toml/lexer_test.zig");
+}
 
 test "toml: module compiles" {
     std.testing.refAllDecls(@This());
