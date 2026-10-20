@@ -91,6 +91,10 @@ pub const Lexer = struct {
 
     pub const InitError = error{InputTooLarge};
 
+    /// Longest input `init` accepts: `maxInt(u32)` less headroom so that `offset + 8` (the widest
+    /// lookahead, a `\U` escape) cannot overflow a `u32` anywhere in the lexer.
+    pub const input_len_max: u32 = std.math.maxInt(u32) - 16;
+
     const State = enum(u8) { active, finished, failed };
 
     comptime {
@@ -98,9 +102,10 @@ pub const Lexer = struct {
         assert(@typeInfo(State).@"enum".fields.len == 3);
     }
 
-    /// Starts lexing `input`. `InputTooLarge` when it is longer than `maxInt(u32)`.
+    /// Starts lexing `input`. `InputTooLarge` when it is longer than `input_len_max`.
     pub fn init(lexer: *Lexer, input: []const u8) InitError!void {
-        _ = try core.unicode.check_len(input.len);
+        const len = try core.unicode.check_len(input.len);
+        if (len > input_len_max) return error.InputTooLarge;
         lexer.* = .{ .input = input, .offset = 0, .state = .active };
         assert(lexer.state == .active);
         assert(lexer.offset == 0);
@@ -451,7 +456,8 @@ fn check_line_ending_backslash(input: []const u8, backslash: u32) Escape {
     assert(input[backslash] == '\\');
     var index = backslash + 1;
     while (index < input.len and (input[index] == ' ' or input[index] == '\t')) index += 1;
-    if (index < input.len and input[index] == '\n') return .{ .next = index + 1 };
+    if (index == input.len) return .{ .failed = .{ .err = error.UnexpectedEnd, .offset = index } };
+    if (input[index] == '\n') return .{ .next = index + 1 };
     const crlf = index + 1 < input.len and input[index] == '\r' and input[index + 1] == '\n';
     if (crlf) return .{ .next = index + 2 };
     return .{ .failed = .{ .err = error.InvalidEscape, .offset = backslash } };

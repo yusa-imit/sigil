@@ -251,6 +251,7 @@ test "lexer: has_escapes marks a backslash in a basic string only" {
         .{ .input = "\"a\\nc\"", .flag = true },
         .{ .input = "'a\\nc'", .flag = false },
         .{ .input = "\"\"\"a\\\nb\"\"\"", .flag = true },
+        .{ .input = "'''a\\\nb'''", .flag = false },
     };
     for (cases) |case| {
         var lexer: Lexer = undefined;
@@ -292,6 +293,7 @@ test "lexer: every scan error is provoked with its line and column" {
     try expect_failure("$", .key, error.UnexpectedToken, 1, 1);
     try expect_failure("a\n\xC3\xA9", .key, error.UnexpectedToken, 2, 1);
     try expect_failure("ab\xC3\xA9", .value, error.UnexpectedToken, 1, 3);
+    try expect_failure("\"\"\"a\\  \t", .value, error.UnexpectedEnd, 1, 9);
     // InvalidEscape
     try expect_failure("\"a\\xb\"", .value, error.InvalidEscape, 1, 3);
     try expect_failure("\"\\e\"", .value, error.InvalidEscape, 1, 2);
@@ -339,8 +341,14 @@ test "lexer: a tab is data in strings and comments, a literal backslash is not a
 
 test "lexer: init refuses input longer than maxInt(u32)" {
     const base: [*]const u8 = @ptrFromInt(8);
-    const huge = base[0 .. @as(usize, std.math.maxInt(u32)) + 1];
     var lexer: Lexer = undefined;
+    // `init` reads only the length, so a slice that is never dereferenced probes the boundary.
+    try lexer.init(base[0..Lexer.input_len_max]);
+    try std.testing.expectError(
+        error.InputTooLarge,
+        lexer.init(base[0 .. @as(usize, Lexer.input_len_max) + 1]),
+    );
+    const huge = base[0 .. @as(usize, std.math.maxInt(u32)) + 1];
     try std.testing.expectError(error.InputTooLarge, lexer.init(huge));
 }
 
@@ -431,4 +439,44 @@ test "lexer: model — random escaped strings decode to the generated text, 500 
     // The generator reaches escapes in most seeds; a regression to raw-only output would pass
     // every comparison above without testing the decoder.
     try expect(escaped_seen > model_seeds / 2);
+}
+
+// Every prefix of these documents must lex to a typed error or to success, in both modes.
+test "lexer: every prefix of a valid document fails with a typed error or succeeds" {
+    const corpus = [_][]const u8{
+        "a = \"x\\u00e9\\U0001F600\\n\" # c\r\n[[t.u]]\n",
+        "k = '''l1\nl2''' # c\n",
+        "k = \"\"\"a \\  \r\n  b\"\"\"\n",
+        "{ a = 'x', b = [ \"y\" ] }\r\n",
+    };
+    var diag = Diagnostics.init(0, 0, "untouched", null);
+    for (corpus) |document| {
+        for (0..document.len + 1) |len| {
+            inline for (.{ Mode.key, Mode.value }) |mode| {
+                // proof: `ScanError` holds no I/O error, so `error.Canceled` cannot occur.
+                if (lex_all(document[0..len], mode, &diag)) |_| {} else |err| switch (err) {
+                    error.UnexpectedEnd,
+                    error.UnexpectedToken,
+                    error.InvalidEscape,
+                    error.LoneSurrogate,
+                    error.ControlCharacter,
+                    error.InvalidUtf8,
+                    => {},
+                }
+            }
+        }
+    }
+    // The whole documents lex cleanly in value mode.
+    var clean = Diagnostics.init(0, 0, "untouched", null);
+    for (corpus) |document| try expect(try lex_all(document, .value, &clean) > 0);
+    try expectEqualStrings("untouched", clean.message());
+}
+
+test "lexer: decode_string works when the output is exactly as long as the raw body" {
+    var out: [6]u8 = undefined;
+    const decoded = try decode_one("\"\\u00e9\"", .string_basic, &out);
+    try expectEqualStrings("\u{e9}", decoded);
+    var tight: [8]u8 = undefined;
+    const mixed = try decode_one("\"\\u0041\\n\"", .string_basic, &tight);
+    try expectEqualStrings("A\n", mixed);
 }
