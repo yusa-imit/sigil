@@ -2,8 +2,8 @@
 //! Diagnostics (line:col), UTF-8/escape utils.
 //!
 //! Status: `value`, `tree`, `diagnostics`, `number` (plan 002) and `unicode`, `unicode_escape`
-//! (plan 003) have landed; the remaining files are added as PRD phases land (see docs/PRD.md
-//! and docs/plans/).
+//! (plan 003) and `timestamp` (plan 006) have landed; the remaining files are added as PRD
+//! phases land (see docs/PRD.md and docs/plans/).
 
 const std = @import("std");
 const assert = std.debug.assert;
@@ -18,6 +18,7 @@ pub const diagnostics = @import("core/diagnostics.zig");
 pub const Diagnostics = diagnostics.Diagnostics;
 pub const DiagnosticsType = diagnostics.DiagnosticsType;
 pub const number = @import("core/number.zig");
+pub const timestamp = @import("core/timestamp.zig");
 pub const unicode = @import("core/unicode.zig");
 pub const unicode_escape = @import("core/unicode_escape.zig");
 
@@ -25,7 +26,7 @@ pub const unicode_escape = @import("core/unicode_escape.zig");
 /// UTF-8 and escape handling, `Value` comparison depth, tree building). Extend as files land;
 /// keep names descriptive (`error.ChecksumMismatch`, not `error.Invalid`).
 pub const Error = number.Error || unicode.Error || unicode_escape.EscapeError ||
-    error{ TooDeep, OutOfMemory };
+    timestamp.Error || error{ TooDeep, OutOfMemory };
 
 test "core: module compiles" {
     std.testing.refAllDecls(@This());
@@ -48,6 +49,7 @@ test "core: Error is the union of the module error sets, with no placeholder" {
     comptime assert(error_set_has(Error, "InvalidHex"));
     comptime assert(error_set_has(Error, "LoneSurrogate"));
     comptime assert(error_set_has(Error, "InvalidCodepoint"));
+    comptime assert(error_set_has(Error, "InvalidDatetime"));
     comptime assert(error_set_has(Error, "TooDeep"));
     comptime assert(error_set_has(Error, "OutOfMemory"));
 }

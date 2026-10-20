@@ -6,6 +6,17 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- `sigil.core.timestamp` (plan 006 item 2): proleptic Gregorian civil date <-> days and RFC 3339
+  / TOML datetime `parse` and `format` for all four kinds, shared with future CBOR tag 0.
+
+### Changed
+
+- `core.Timestamp` gains a required `kind` field (`instant`, `local_datetime`, `local_date`,
+  `local_time`) and `check_invariants` (ADR 0005 section 2). Breaking for code that builds a
+  `Timestamp` literal; allowed in a foundation MINOR during 0.x.
+
 ## [0.4.0] - 2026-10-19
 
 Plan 005 (Phase 2E): `sigil.path` is real. JSON Pointer, Merge Patch, Patch and a JSONPath

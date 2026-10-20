@@ -164,6 +164,7 @@ fn samples(entries: []Map.Entry) [10]Sample {
         .{ .name = "string", .value = .{ .string = "s" } },
         .{ .name = "bytes", .value = .{ .bytes = "b" } },
         .{ .name = "timestamp", .value = .{ .timestamp = .{
+            .kind = .instant,
             .seconds = 0,
             .nanoseconds = 0,
             .offset_minutes = null,
@@ -426,9 +427,19 @@ test "parse optional: an optional string borrows the same bytes" {
 
 test "parse timestamp: accepts only a timestamp and returns it field for field" {
     const Stamp = core.Timestamp;
-    const stamp: Stamp = .{ .seconds = 1_700_000_000, .nanoseconds = 123, .offset_minutes = -60 };
+    const stamp: Stamp = .{
+        .kind = .instant,
+        .seconds = 1_700_000_000,
+        .nanoseconds = 123,
+        .offset_minutes = -60,
+    };
     try expect_parse(Stamp, .{ .timestamp = stamp }, stamp);
-    const local: Stamp = .{ .seconds = -1, .nanoseconds = 999_999_999, .offset_minutes = null };
+    const local: Stamp = .{
+        .kind = .local_datetime,
+        .seconds = -1,
+        .nanoseconds = 999_999_999,
+        .offset_minutes = null,
+    };
     try expect_parse(Stamp, .{ .timestamp = local }, local);
     try expect_rejects_others(Stamp, "timestamp", &.{"timestamp"});
     try expect_mismatch(Stamp, .{ .string = "2020-01-01" }, "timestamp", "string");
@@ -476,6 +487,7 @@ test "parse: no scalar kind allocates, so a failing allocator never matters" {
     try expect_no_alloc(?u8, .null);
     try expect_no_alloc(?u8, .{ .int = 1 });
     try expect_no_alloc(core.Timestamp, .{ .timestamp = .{
+        .kind = .instant,
         .seconds = 0,
         .nanoseconds = 0,
         .offset_minutes = null,

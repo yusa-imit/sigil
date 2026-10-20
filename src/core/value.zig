@@ -27,14 +27,43 @@ pub const Value = union(enum) {
     map: Map,
 };
 
-/// A point in time: TOML datetime, CBOR tag 0/1.
+/// A point in time or a civil date/time: TOML datetime (four kinds), CBOR tag 0/1 (`instant`).
+/// ADR 0005 section 2 gives the meaning of `seconds` and `offset_minutes` per kind.
 pub const Timestamp = struct {
-    /// Seconds since the Unix epoch, UTC.
+    pub const Kind = enum(u8) { instant, local_datetime, local_date, local_time };
+
+    /// No default: every construction site names its kind.
+    kind: Kind,
+    /// `instant`: Unix seconds, UTC. `local_datetime`/`local_date`: the civil fields read as if
+    /// UTC (a date is midnight). `local_time`: seconds since midnight, `0..86399`.
     seconds: i64,
-    /// Sub-second part, `0..999_999_999` inclusive.
+    /// Sub-second part, `0..999_999_999` inclusive; 0 for `local_date`.
     nanoseconds: u32,
-    /// UTC offset in minutes, or null for a local (offset-less) time.
+    /// UTC offset in minutes, `-1439..1439`. Null for every kind but `instant`, and for an
+    /// `instant` whose source carries no offset (CBOR tag 1).
     offset_minutes: ?i16,
+
+    /// Asserts the per-kind invariants of ADR 0005 section 2. Programmer-error check: parsers
+    /// and decoders must build only timestamps that satisfy it.
+    pub fn check_invariants(stamp: Timestamp) void {
+        assert(stamp.nanoseconds < 1_000_000_000);
+        if (stamp.offset_minutes) |offset| {
+            assert(offset >= -1439);
+            assert(offset <= 1439);
+            assert(stamp.kind == .instant);
+        }
+        switch (stamp.kind) {
+            .instant, .local_datetime => {},
+            .local_date => {
+                assert(@mod(stamp.seconds, 86_400) == 0);
+                assert(stamp.nanoseconds == 0);
+            },
+            .local_time => {
+                assert(stamp.seconds >= 0);
+                assert(stamp.seconds < 86_400);
+            },
+        }
+    }
 };
 
 /// An insertion-ordered string-keyed map over a caller-supplied entry buffer.
@@ -212,7 +241,12 @@ test "value: every variant constructs and switches exhaustively" {
         .{ .float = 1.5 },
         .{ .string = "s" },
         .{ .bytes = "b" },
-        .{ .timestamp = .{ .seconds = 0, .nanoseconds = 0, .offset_minutes = null } },
+        .{ .timestamp = .{
+            .kind = .instant,
+            .seconds = 0,
+            .nanoseconds = 0,
+            .offset_minutes = null,
+        } },
         .{ .array = &.{} },
         .{ .map = Map.init(&.{}) },
     };

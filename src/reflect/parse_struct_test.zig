@@ -71,7 +71,12 @@ test "struct: every non-map value is a type mismatch naming its tag" {
     var rig: Rig = undefined;
     rig.init();
     defer rig.deinit();
-    const stamp: core.Timestamp = .{ .seconds = 0, .nanoseconds = 0, .offset_minutes = null };
+    const stamp: core.Timestamp = .{
+        .kind = .instant,
+        .seconds = 0,
+        .nanoseconds = 0,
+        .offset_minutes = null,
+    };
     try rig.mismatch(Point, .null, "map", "null");
     try rig.mismatch(Point, .{ .bool = true }, "map", "bool");
     try rig.mismatch(Point, int(1), "map", "int");
@@ -283,7 +288,12 @@ test "struct: scalar, Value, Timestamp and enum fields parse in one struct" {
     var rig: Rig = undefined;
     rig.init();
     defer rig.deinit();
-    const stamp: core.Timestamp = .{ .seconds = 5, .nanoseconds = 6, .offset_minutes = 60 };
+    const stamp: core.Timestamp = .{
+        .kind = .instant,
+        .seconds = 5,
+        .nanoseconds = 6,
+        .offset_minutes = 60,
+    };
     const input = try rig.obj(&.{
         kv("color", str("green")),
         kv("any", .null),

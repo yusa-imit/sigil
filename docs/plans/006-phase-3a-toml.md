@@ -33,7 +33,7 @@ consumer asking for it; 2F stays out except the TOML fuzz in item 10 (PRD §6: p
       `write_value`, `stringify`, options); (g) where the toml-test runner lives, so no
       `toml/` library file imports `json/` (test-only precedent: `path/conformance_test.zig`).
       Amends PRD §4.3 TOML row. Verification: `docs/adr/0005-toml-contract.md` exists.
-- [ ] **`core/timestamp.zig`.** The `Timestamp` change of ADR 0005 (a) plus RFC 3339 / TOML
+- [x] **`core/timestamp.zig`.** The `Timestamp` change of ADR 0005 (a) plus RFC 3339 / TOML
       datetime parse and format (civil date <-> days, offsets, fraction digits). Shared in
       `core` because CBOR tag 0 needs the same text form and siblings may not share code.
       Tests: 0001-01-01 and 9999-12-31, Feb 29 in 2000 vs 1900, `2023-02-29` rejected,

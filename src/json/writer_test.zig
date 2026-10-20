@@ -183,7 +183,12 @@ test "writer: sort_keys on a map whose live count is below its capacity" {
 }
 
 test "writer: bytes, timestamp, NaN and infinities are refused with their key path" {
-    const stamp: core.Timestamp = .{ .seconds = 0, .nanoseconds = 0, .offset_minutes = null };
+    const stamp: core.Timestamp = .{
+        .kind = .instant,
+        .seconds = 0,
+        .nanoseconds = 0,
+        .offset_minutes = null,
+    };
     const unrepresentable = error.Unrepresentable;
     const bytes_text = "bytes cannot be written as JSON";
     try expect_fail(.{ .bytes = "ab" }, minified, unrepresentable, bytes_text);
