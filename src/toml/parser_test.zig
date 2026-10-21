@@ -365,6 +365,19 @@ test "parser: the message names the key and the line of the earlier definition" 
     try expectEqualStrings("name = 2", diag.snippet_text().?[0..8]);
 }
 
+test "parser: a long multi-byte key is cut on a character boundary in the message" {
+    var tree: ValueTree = undefined;
+    tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    const key = "\"" ++ "é" ** 30 ++ "\"";
+    var diag = Diagnostics.init(0, 0, "untouched", null);
+    const input = key ++ " = 1\n" ++ key ++ " = 2\n";
+    try expectError(error.DuplicateKey, parse_with(&tree, input, options_default, &diag));
+    try expect(std.unicode.utf8ValidateSlice(diag.message()));
+    try expect(std.mem.find(u8, diag.message(), "éé") != null);
+}
+
 test "parser: grammar errors" {
     try expect_failure("= 1\n", error.UnexpectedToken, 1, 1);
     try expect_failure("a = \n", error.UnexpectedToken, 1, 5);

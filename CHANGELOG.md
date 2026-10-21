@@ -15,6 +15,10 @@ All notable changes to this project are documented in this file. The format foll
 - `sigil.toml.scalar` (plan 006 item 4): `parse` classifies a lexer scalar run into a `Value`
   (booleans, `i64` integers incl. `0x`/`0o`/`0b`, floats, `inf`/`nan`, the four datetimes); the
   lexer now returns `date time` with one space as a single run.
+- `sigil.toml.parser` and `toml/scratch.zig` (plan 006 item 5): `parse_value` for dotted keys,
+  `[table]` and `[[array]]` headers and scalar values, with the ADR 0005 redefinition state
+  machine (`DuplicateKey`, `TableRedefined`, `TypeConflict`, `TooDeep`) reported at line:col.
+  Arrays and inline tables follow in item 6.
 
 ### Changed
 

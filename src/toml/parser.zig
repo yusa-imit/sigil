@@ -253,7 +253,11 @@ const Parser = struct {
         key: scratch_module.Key,
     ) ParseValueError {
         const earlier = core.diagnostics.position_of(parser.input, parser.scratch.conflict_offset);
-        const shown = key.bytes[0..@min(key.bytes.len, 40)];
+        var shown_len = @min(key.bytes.len, 40);
+        // Do not cut inside a UTF-8 sequence: back up to a boundary.
+        while (shown_len > 0 and shown_len < key.bytes.len and
+            (key.bytes[shown_len] & 0xC0) == 0x80) shown_len -= 1;
+        const shown = key.bytes[0..shown_len];
         var buffer: [160]u8 = undefined;
         // proof: the switch covers every `scratch.Error` variant; a new one fails the build here.
         const text = switch (err) {

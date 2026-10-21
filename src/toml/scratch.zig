@@ -13,7 +13,10 @@
 //! byte offset of the earlier definition in `conflict_offset` for the parser's diagnostic.
 //!
 //! Lookup is a hash index over (parent, key), so a table with a million keys costs a million
-//! probes, not a million squared. Keys are compared as decoded bytes.
+//! probes, not a million squared. Keys are compared as decoded bytes. The hash is Wyhash seeded
+//! with the parent index and not secret: crafted keys that collide can slow one parse down, which
+//! `ParseOptions.bytes_max` bounds. A node is about 90 bytes, so scratch costs roughly 50 bytes
+//! per input byte (plan 006 item 11 measures it).
 //!
 //! Allocation: `init` allocates two arrays from `gpa` bounded by the input length (nodes and
 //! hash slots), `deinit` frees them; nothing is allocated from `gpa` in between. `materialize`
@@ -83,8 +86,10 @@ pub const Scratch = struct {
     /// or `TooDeep` ran into (for `TooDeep`: the offending key itself).
     conflict_offset: u32,
 
-    /// Allocates the node and slot arrays for an input of `input_len` bytes: a node needs at
-    /// least one key byte and one separator byte, so `input_len / 2 + 2` nodes always suffice.
+    /// Allocates the node and slot arrays for an input of `input_len` bytes. Every node but
+    /// the root costs at least two input bytes (a one-byte key plus its `.`, `=` or `]`; an
+    /// `[[a]]` element rides on the 5 bytes of its header), so `input_len / 2 + 2` nodes leave
+    /// a margin of one. Item 6 must test this bound with nested one-byte arrays and tables.
     /// Precondition: `1 <= depth_max <= core.value.nesting_max`.
     pub fn init(
         scratch: *Scratch,
@@ -250,6 +255,7 @@ pub const Scratch = struct {
     }
 
     fn add_keyed(scratch: *Scratch, parent: u32, key: Key, state: State) Error!u32 {
+        assert(scratch.find(parent, key.bytes) == null);
         const index = try scratch.link(parent, key.offset, state);
         const node = &scratch.nodes[index];
         node.key = key.bytes;
@@ -275,6 +281,8 @@ pub const Scratch = struct {
 
     /// Appends a fresh node to `parent`'s child list; checks depth and capacity.
     fn link(scratch: *Scratch, parent: u32, offset: u32, state: State) Error!u32 {
+        assert(parent < scratch.node_count);
+        assert(scratch.node_count <= scratch.nodes.len);
         const parent_depth = scratch.nodes[parent].depth;
         const depth: u16 = if (state == .scalar) parent_depth else parent_depth + 1;
         if (depth > scratch.depth_max) {
@@ -293,6 +301,8 @@ pub const Scratch = struct {
         owner.last_child = index;
         owner.child_count += 1;
         scratch.node_count += 1;
+        assert(owner.last_child == index);
+        assert(scratch.nodes[index].parent == parent);
         return index;
     }
 
