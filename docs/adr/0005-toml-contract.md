@@ -90,10 +90,11 @@ redefinition state machine (§4), so it would be the parser written twice. Inste
    on error (`errdefer`/`defer` pair). Nothing is allocated from `gpa` after step 1, so a
    `FailingAllocator` sweep is exactly two failure points plus the tree arena.
 
-As built (plan 006 item 5, `toml/scratch.zig`): `nodes_max` is `input.len / 2 + 2` (every node
-but the root costs at least two input bytes, so this leaves a margin of one over the `+ 1` of
-the sketch above). The two arrays are the node array and a hash index
-over (parent, key), sized to a power of two at least twice `nodes_max`, so a lookup is O(1)
+As built (plan 006 items 5 and 6, `toml/scratch.zig`): `nodes_max` is `input.len / 2 + 2 +
+depth_max` (every node but the root costs at least two input bytes once its container is
+closed, which gives the `+ 2`; a `[` or `{` costs one byte until its closer arrives, and at
+most `depth_max` containers are open at once, which gives the last term). The two arrays are
+the node array and a hash index over (parent, key), sized to a power of two at least twice `nodes_max`, so a lookup is O(1)
 and a table with a million keys is not quadratic. `Map.put` is not used by `materialize`, since
 its duplicate scan is linear; the index has already proved the keys unique. Key bytes borrow the
 input unless an escape was decoded (then they already live in the tree arena).

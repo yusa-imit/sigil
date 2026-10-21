@@ -1,6 +1,5 @@
 //! Tests for `toml/scratch.zig`: the ADR 0005 section 4 state table, the hash index, depth,
-//! and `materialize` (plan 006 item 5). Array and inline-table states are driven here directly
-//! because the parser only grows them in item 6.
+//! and `materialize` (plan 006 items 5 and 6), including keyless array elements.
 
 const std = @import("std");
 const core = @import("../core.zig");
@@ -297,4 +296,56 @@ test "scratch: model test, 300 seeds of inserts into two tables against a refere
         try expectEqual(expected_root, scratch.child_count(root));
         try expectEqual(expected_table, scratch.child_count(table));
     }
+}
+
+test "scratch: array elements are keyless, ordered, and materialize in order" {
+    var scratch = try new_scratch(4);
+    defer scratch.deinit(std.testing.allocator);
+
+    const list = try scratch.insert_container(root, key("a", 0), .array_static);
+    try scratch.append_scalar(list, .{ .int = 1 }, 5);
+    const inner = try scratch.append_container(list, .array_static, 8);
+    try scratch.append_scalar(inner, .{ .bool = true }, 9);
+    const table = try scratch.append_container(list, .inline_table, 14);
+    try scratch.insert_scalar(table, key("k", 15), .{ .int = 2 });
+    try expectEqual(@as(u32, 3), scratch.child_count(list));
+    try expectEqual(State.inline_table, scratch.state_of(table));
+    scratch.check_invariants();
+
+    var tree: ValueTree = undefined;
+    tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    const value = try scratch_module.materialize(&scratch, &tree);
+    const items = value.map.get("a").?.array;
+    try expectEqual(@as(usize, 3), items.len);
+    try expectEqual(@as(i64, 1), items[0].int);
+    try expect(items[1].array[0].bool);
+    try expectEqual(@as(i64, 2), items[2].map.get("k").?.int);
+}
+
+test "scratch: an array element counts a level, a scalar element does not" {
+    var scratch = try new_scratch(3);
+    defer scratch.deinit(std.testing.allocator);
+
+    const list = try scratch.insert_container(root, key("a", 0), .array_static);
+    try scratch.append_scalar(list, .null, 4);
+    const inner = try scratch.append_container(list, .array_static, 6);
+    try scratch.append_scalar(inner, .null, 7);
+    try expectError(error.TooDeep, scratch.append_container(inner, .inline_table, 9));
+    try expectEqual(@as(u32, 9), scratch.conflict_offset);
+}
+
+test "scratch: appending past the node array reports OutOfMemory" {
+    var scratch: Scratch = undefined;
+    try scratch.init(std.testing.allocator, 0, 4);
+    defer scratch.deinit(std.testing.allocator);
+
+    const list = try scratch.insert_container(root, key("a", 0), .array_static);
+    var appended: u32 = 0;
+    while (scratch.append_scalar(list, .null, 1)) |_| {
+        appended += 1;
+        try expect(appended < 8);
+    } else |err| try expectEqual(error.OutOfMemory, err);
+    try expectEqual(scratch.child_count(list), appended);
 }

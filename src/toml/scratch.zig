@@ -89,7 +89,8 @@ pub const Scratch = struct {
     /// Allocates the node and slot arrays for an input of `input_len` bytes. Every node but
     /// the root costs at least two input bytes (a one-byte key plus its `.`, `=` or `]`; an
     /// `[[a]]` element rides on the 5 bytes of its header), so `input_len / 2 + 2` nodes leave
-    /// a margin of one. Item 6 must test this bound with nested one-byte arrays and tables.
+    /// a margin of one. A `[` or `{` costs one byte until its closer arrives, so `depth_max`
+    /// more nodes are allowed for containers still open at the end of the input.
     /// Precondition: `1 <= depth_max <= core.value.nesting_max`.
     pub fn init(
         scratch: *Scratch,
@@ -99,7 +100,7 @@ pub const Scratch = struct {
     ) error{OutOfMemory}!void {
         assert(depth_max >= 1);
         assert(depth_max <= core.value.nesting_max);
-        const nodes_max = @as(usize, @divFloor(input_len, 2)) + 2;
+        const nodes_max = @as(usize, @divFloor(input_len, 2)) + 2 + depth_max;
         const doubled = std.math.mul(usize, nodes_max, 2) catch return error.OutOfMemory;
         const slot_count = std.math.ceilPowerOfTwo(usize, doubled) catch return error.OutOfMemory;
         const nodes = try gpa.alloc(Node, nodes_max);
@@ -224,6 +225,24 @@ pub const Scratch = struct {
     pub fn insert_container(scratch: *Scratch, parent: u32, key: Key, state: State) Error!u32 {
         assert(state == .inline_table or state == .array_static);
         return scratch.insert_keyed(parent, key, state);
+    }
+
+    /// A scalar element of the array `array` (state `array_static`).
+    pub fn append_scalar(scratch: *Scratch, array: u32, value: Value, offset: u32) Error!void {
+        assert(value != .map);
+        assert(value != .array);
+        assert(scratch.nodes[array].state == .array_static);
+        const index = try scratch.link(array, offset, .scalar);
+        scratch.nodes[index].value = value;
+        assert(scratch.nodes[index].state == .scalar);
+    }
+
+    /// An inline table or array element of the array `array`; `state` is `.inline_table` or
+    /// `.array_static`. Returns the new container.
+    pub fn append_container(scratch: *Scratch, array: u32, state: State, offset: u32) Error!u32 {
+        assert(state == .inline_table or state == .array_static);
+        assert(scratch.nodes[array].state == .array_static);
+        return scratch.link(array, offset, state);
     }
 
     fn insert_keyed(scratch: *Scratch, parent: u32, key: Key, state: State) Error!u32 {

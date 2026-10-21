@@ -25,6 +25,7 @@ test {
     _ = @import("toml/scalar_test.zig");
     _ = @import("toml/scratch_test.zig");
     _ = @import("toml/parser_test.zig");
+    _ = @import("toml/parser_value_test.zig");
 }
 
 test "toml: module compiles" {

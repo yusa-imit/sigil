@@ -54,7 +54,7 @@ consumer asking for it; 2F stays out except the TOML fuzz in item 10 (PRD §6: p
       array-of-tables example; each redefinition error (table twice, dotted key into a
       `[header]` table, `[[a]]` after `a = []`, key reopening an inline table) with line:col;
       a header 128 segments deep passes, 129 is `TooDeep`; `check_invariants` on every map.
-- [ ] **`toml/parser.zig` — arrays and inline tables.** Values on an explicit bounded stack
+- [x] **`toml/parser.zig` — arrays and inline tables.** Values on an explicit bounded stack
       (no recursion): mixed-type arrays (TOML 1.0), multi-line arrays with comments and a
       trailing comma, single-line inline tables frozen after close. Tests: spec examples,
       nesting at 128 and 129, `{ a = 1, }` and a newline inside `{}` rejected.
