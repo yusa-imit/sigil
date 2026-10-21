@@ -49,7 +49,7 @@ consumer asking for it; 2F stays out except the TOML fuzz in item 10 (PRD §6: p
       (exponent, `inf`, `nan`, signs); booleans; the four datetimes via `core/timestamp.zig`.
       Tests: spec integer/float/datetime tables, i64 min/max and one past (typed error, never
       float), `1__0`, `_1`, `01`, `0x_1` rejected.
-- [ ] **`toml/parser.zig` — keys and tables.** Dotted keys, `[table]`, `[[array.of.tables]]`
+- [x] **`toml/parser.zig` — keys and tables.** Dotted keys, `[table]`, `[[array.of.tables]]`
       with the ADR 0005 (c) state machine; insertion order kept. Tests: every spec table and
       array-of-tables example; each redefinition error (table twice, dotted key into a
       `[header]` table, `[[a]]` after `a = []`, key reopening an inline table) with line:col;
