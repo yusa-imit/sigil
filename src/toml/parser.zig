@@ -6,9 +6,10 @@
 //! which redefinitions are legal) and copied once into the tree by `scratch.materialize`, so
 //! every `Map` has exactly its final size and keeps document order.
 //!
-//! Scope of this file today: keys, dotted keys, table and array-of-tables headers, and
-//! scalar and string values. Array values and inline tables are plan 006 item 6; until then a
-//! `[` or `{` in value position is `UnexpectedToken`.
+//! Values are scalars, strings, arrays (any mix of types, newlines, comments and a trailing
+//! comma allowed) and single-line inline tables (frozen once closed, no trailing comma). They
+//! nest on an explicit stack of at most `core.value.nesting_max` frames, one per open container;
+//! the scratch depth check refuses a deeper container before it is pushed.
 //!
 //! Every error writes `diag` once, at the first byte of the offending token or key segment
 //! (a conflict names the line of the earlier definition); success never writes it. There is no
@@ -28,6 +29,7 @@ const Allocator = std.mem.Allocator;
 const Diagnostics = core.Diagnostics;
 const Lexer = lexer_module.Lexer;
 const Token = lexer_module.Token;
+const Key = scratch_module.Key;
 const Scratch = scratch_module.Scratch;
 const Value = core.Value;
 const ValueTree = core.ValueTree;
@@ -84,6 +86,45 @@ pub fn parse_value(
     return root;
 }
 
+/// Where a value goes: under a key of a table, or at the end of an array.
+const Target = union(enum) {
+    keyed: KeyPath,
+    element: u32,
+};
+
+/// A table and the last segment of a dotted key inside it.
+const KeyPath = struct { cursor: u32, key: Key };
+
+/// An open array or inline table, and what the next token of it may be.
+const Frame = struct {
+    node: u32,
+    is_array: bool,
+    need: Need,
+};
+
+const Need = enum(u8) {
+    /// Just opened: a value (or key) or the closer.
+    first,
+    /// After a comma: a value or key; an array also takes the closer (trailing comma).
+    after_comma,
+    /// After a value: a comma or the closer.
+    comma_or_close,
+};
+
+const Step = union(enum) {
+    none,
+    close,
+    open: Frame,
+};
+
+/// The key named in a conflict message: the real one, or for an array element the token itself.
+fn target_key(target: Target, token: Token) Key {
+    switch (target) {
+        .keyed => |keyed| return keyed.key,
+        .element => return .{ .bytes = token.raw, .offset = token.offset, .owned = false },
+    }
+}
+
 const Parser = struct {
     input: []const u8,
     tree: *ValueTree,
@@ -136,7 +177,15 @@ const Parser = struct {
 
     /// `a.b.c = value`, after its first token. Returns whether the input ended.
     fn key_value(parser: *Parser, first: Token) ParseValueError!bool {
-        var cursor = parser.current;
+        const target = try parser.key_path(parser.current, first);
+        try parser.read_value(target.cursor, target.key);
+        return parser.line_end();
+    }
+
+    /// The dotted key `a.b.c =` from its first token through the `=`: creates the tables of
+    /// the non-last segments under `cursor` and returns the table and the last segment.
+    fn key_path(parser: *Parser, start: u32, first: Token) ParseValueError!KeyPath {
+        var cursor = start;
         var key = try parser.read_key(first);
         for (0..parser.input.len + 1) |_| {
             const token = try parser.lexer.next(parser.diag, .key);
@@ -147,17 +196,127 @@ const Parser = struct {
                     };
                     key = try parser.read_key(try parser.lexer.next(parser.diag, .key));
                 },
-                .equals => {
-                    const value = try parser.read_value();
-                    parser.scratch.insert_scalar(cursor, key, value) catch |err| {
-                        return parser.scratch_fail(err, key);
-                    };
-                    return parser.line_end();
-                },
+                .equals => return .{ .cursor = cursor, .key = key },
                 else => return parser.unexpected(token),
             }
         }
         unreachable; // proof: each iteration consumes a dot and a key, so at most len iterations.
+    }
+
+    /// The value after `=`, stored under `key` in table `parent`. Containers are filled
+    /// iteratively: `stack` holds the open ones, the innermost last.
+    fn read_value(parser: *Parser, parent: u32, key: Key) ParseValueError!void {
+        var stack: [core.value.nesting_max]Frame = undefined;
+        var depth: u32 = 0;
+        const first = try parser.lexer.next(parser.diag, .value);
+        const root_target: Target = .{ .keyed = .{ .cursor = parent, .key = key } };
+        stack[0] = (try parser.place(root_target, first)) orelse return;
+        depth = 1;
+        for (0..parser.input.len + 1) |_| {
+            switch (try parser.step(&stack[depth - 1])) {
+                .none => {},
+                .close => {
+                    depth -= 1;
+                    if (depth == 0) return;
+                },
+                .open => |frame| {
+                    assert(depth < stack.len); // proof: `link` refused a container past depth_max.
+                    stack[depth] = frame;
+                    depth += 1;
+                },
+            }
+        }
+        unreachable; // proof: each step consumes a token, and a non-`.end` token is a byte.
+    }
+
+    /// One token of the innermost open container: a value, a comma or the closer.
+    fn step(parser: *Parser, frame: *Frame) ParseValueError!Step {
+        if (frame.is_array) return parser.array_step(frame);
+        return parser.table_step(frame);
+    }
+
+    fn array_step(parser: *Parser, frame: *Frame) ParseValueError!Step {
+        assert(frame.is_array);
+        const token = try parser.next_array_token();
+        switch (frame.need) {
+            .comma_or_close => switch (token.kind) {
+                .comma => frame.need = .after_comma,
+                .bracket_close => return .close,
+                else => return parser.unexpected(token),
+            },
+            .first, .after_comma => {
+                if (token.kind == .bracket_close) return .close;
+                frame.need = .comma_or_close;
+                const opened = try parser.place(.{ .element = frame.node }, token);
+                if (opened) |opened_frame| return .{ .open = opened_frame };
+            },
+        }
+        return .none;
+    }
+
+    fn table_step(parser: *Parser, frame: *Frame) ParseValueError!Step {
+        assert(!frame.is_array);
+        const token = try parser.lexer.next(parser.diag, .key);
+        switch (frame.need) {
+            .comma_or_close => switch (token.kind) {
+                .comma => {
+                    frame.need = .after_comma;
+                    return .none;
+                },
+                .brace_close => return .close,
+                else => return parser.unexpected(token),
+            },
+            .first => if (token.kind == .brace_close) return .close,
+            .after_comma => {},
+        }
+        frame.need = .comma_or_close;
+        const target = try parser.key_path(frame.node, token);
+        const value_token = try parser.lexer.next(parser.diag, .value);
+        const keyed: Target = .{ .keyed = target };
+        const opened = try parser.place(keyed, value_token);
+        if (opened) |opened_frame| return .{ .open = opened_frame };
+        return .none;
+    }
+
+    /// The next token inside an array, skipping the newlines that arrays allow.
+    fn next_array_token(parser: *Parser) ParseValueError!Token {
+        for (0..parser.input.len + 1) |_| {
+            const token = try parser.lexer.next(parser.diag, .value);
+            if (token.kind != .newline) return token;
+        }
+        unreachable; // proof: each newline is a byte, so at most len newlines precede a token.
+    }
+
+    /// Stores the value that starts at `token` at `target`. A scalar or string is stored and
+    /// gives null; `[` or `{` creates the container and returns its frame to fill.
+    fn place(parser: *Parser, target: Target, token: Token) ParseValueError!?Frame {
+        switch (token.kind) {
+            .bracket_open => return try parser.place_container(target, token, .array_static),
+            .brace_open => return try parser.place_container(target, token, .inline_table),
+            else => {},
+        }
+        const value = try parser.scalar_value(token);
+        const stored = switch (target) {
+            .keyed => |keyed| parser.scratch.insert_scalar(keyed.cursor, keyed.key, value),
+            .element => |array| parser.scratch.append_scalar(array, value, token.offset),
+        };
+        stored catch |err| return parser.scratch_fail(err, target_key(target, token));
+        return null;
+    }
+
+    fn place_container(
+        parser: *Parser,
+        target: Target,
+        token: Token,
+        state: scratch_module.State,
+    ) ParseValueError!Frame {
+        assert(token.kind == .bracket_open or token.kind == .brace_open);
+        const created = switch (target) {
+            .keyed => |keyed| parser.scratch.insert_container(keyed.cursor, keyed.key, state),
+            .element => |array| parser.scratch.append_container(array, state, token.offset),
+        };
+        const node = created catch |err| return parser.scratch_fail(err, target_key(target, token));
+        return .{ .node = node, .is_array = state == .array_static, .need = .first };
     }
 
     /// The end of a statement: a newline (false) or the end of the input (true).
@@ -186,9 +345,8 @@ const Parser = struct {
         }
     }
 
-    /// The value after `=`: a scalar or a string. Arrays and inline tables are item 6.
-    fn read_value(parser: *Parser) ParseValueError!Value {
-        const token = try parser.lexer.next(parser.diag, .value);
+    /// A scalar or a string value; any other token is `UnexpectedToken` (or `UnexpectedEnd`).
+    fn scalar_value(parser: *Parser, token: Token) ParseValueError!Value {
         switch (token.kind) {
             .scalar => return scalar.parse(token.raw) catch |err| {
                 return parser.scalar_fail(err, token);
