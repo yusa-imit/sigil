@@ -29,7 +29,7 @@ unstable and may change between 0.x minors.
 | `sigil.reflect` | Implemented (`Schema(T)` planned) | comptime struct ↔ Value mapping: parse(T), stringify(T), field options (rename, defaults, deny_unknown), custom hooks. Schema(T) validation is not built yet. |
 | `sigil.json` | Implemented | RFC 8259 strict pull scanner, DOM builder, minified/pretty writer, `parse(T)`/`stringify`, `parseFile`/`stringifyFile` with line:col diagnostics. Direct-to-struct streaming parse is not built yet. |
 | `sigil.path` | Implemented | JSON Pointer (RFC 6901), JSONPath (RFC 9535 without `match`/`search`), JSON Patch (RFC 6902), Merge Patch (RFC 7386) — all over Value, no recursion, no allocation after setup. |
-| `sigil.toml` | Planned | TOML v1.0.0 lexer, parser, writer (order-preserving). toml-test suite. |
+| `sigil.toml` | Parser landed (`parse`, `parse_value`); writer and toml-test pending | TOML v1.0.0 lexer, parser, writer (order-preserving). toml-test suite. |
 | `sigil.yaml` | Planned | YAML 1.2 core-schema subset: block/flow collections, scalars, anchors/aliases (bounded), multi-doc. |
 | `sigil.msgpack` | Planned | MessagePack encoder/decoder, all types + ext, zero-copy bin/str. |
 | `sigil.cbor` | Planned | CBOR (RFC 8949) core + tags 0–3, deterministic encoding option. |

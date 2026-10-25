@@ -94,10 +94,10 @@ As built (plan 006 items 5 and 6, `toml/scratch.zig`): `nodes_max` is `input.len
 depth_max` (every node but the root costs at least two input bytes once its container is
 closed, which gives the `+ 2`; a `[` or `{` costs one byte until its closer arrives, and at
 most `depth_max` containers are open at once, which gives the last term). The two arrays are
-the node array and a hash index over (parent, key), sized to a power of two at least twice `nodes_max`, so a lookup is O(1)
-and a table with a million keys is not quadratic. `Map.put` is not used by `materialize`, since
-its duplicate scan is linear; the index has already proved the keys unique. Key bytes borrow the
-input unless an escape was decoded (then they already live in the tree arena).
+the node array and a hash index over (parent, key), sized to a power of two at least twice
+`nodes_max`, so a lookup is O(1) and a table with a million keys is not quadratic. `Map.put`
+is not used by `materialize`, since its duplicate scan is linear; the index has already proved
+the keys unique. Key bytes borrow the input unless an escape was decoded (then they already live in the tree arena).
 
 The benchmark (item 11) records scratch bytes per input byte beside arena bytes per input byte.
 If the `input.len / 2 + 1` bound proves wasteful the bound is tightened by a cheap pre-count of
@@ -113,7 +113,7 @@ these.
 | `implicit` | an intermediate segment of a header or of `[[ ]]` | becomes `header` (once) | `TableRedefined` | `DuplicateKey` |
 | `header` | `[a.b]`, or `[[a]]` element | `TableRedefined` | `TableRedefined` | `DuplicateKey` |
 | `dotted` | `a.b = v` makes `a` | `TableRedefined` | allowed, same section only | `DuplicateKey` |
-| `inline` | `{ ... }` value, frozen at `}` | `TableRedefined` | `TableRedefined` | `DuplicateKey` |
+| `inline` | `{ ... }` value, frozen from its `{` | `TableRedefined` | `TableRedefined` | `DuplicateKey` |
 | `array_static` | `a = [ ... ]` | `TypeConflict` | `TypeConflict` | `DuplicateKey` |
 | `array_tables` | first `[[a]]` | append an element | `TypeConflict` | `DuplicateKey` |
 
@@ -188,8 +188,12 @@ these.
 | `OutOfMemory` | core | scratch or arena allocation failed |
 
 `toml.ParseError = ParseValueError || reflect.ParseError`; reflect errors are re-located to the
-value the key path names, as `json.parse` does (`MissingField` and `UnknownField` point at the
-table header or first key of that table). `WriteValueError` is
+value the key path names, as `json.parse` does. The position is the node's definition offset in
+the scratch tree: a keyed value or table at its key (a `[header]` table at the last header
+segment, a dotted-key table at its first key segment), an array element at its first byte, the
+root at 1:1; `MissingField` and `UnknownField` therefore point at the table's key. The
+re-location parses the text a second time on the error path only (`parser.locate`), and a failed
+second allocation or parse falls back to 1:1. `WriteValueError` is
 `core.unicode_escape.WriteError || error{ Unrepresentable, TooDeep, RootNotTable }` (6 variants);
 `StringifyError` is `reflect.StringifyError || WriteValueError`. Every parse error writes `diag`
 once with a line:col; success never writes it.

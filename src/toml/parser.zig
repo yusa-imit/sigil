@@ -28,6 +28,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Diagnostics = core.Diagnostics;
 const Lexer = lexer_module.Lexer;
+const Path = @import("../reflect/context.zig").Path;
 const Token = lexer_module.Token;
 const Key = scratch_module.Key;
 const Scratch = scratch_module.Scratch;
@@ -61,20 +62,15 @@ pub fn parse_value(
         write_diag(input, diag, 0, "input is longer than bytes_max");
         return error.InputTooLarge;
     }
-    var parser: Parser = .{
-        .input = input,
-        .tree = tree,
-        .diag = diag,
-        .lexer = undefined,
-        .scratch = undefined,
-        .current = scratch_module.root_index,
+    var parser: Parser = undefined;
+    // proof: `begin` returns the two names below and no I/O error.
+    parser.begin(gpa, tree, input, options.depth_max, diag) catch |err| switch (err) {
+        error.InputTooLarge => {
+            write_diag(input, diag, 0, "input is longer than the lexer limit");
+            return error.InputTooLarge;
+        },
+        error.OutOfMemory => return parser.out_of_memory(0),
     };
-    parser.lexer.init(input) catch {
-        write_diag(input, diag, 0, "input is longer than the lexer limit");
-        return error.InputTooLarge;
-    };
-    const input_len: u32 = @intCast(input.len); // The lexer accepted it, so it fits a u32.
-    parser.scratch.init(gpa, input_len, options.depth_max) catch return parser.out_of_memory(0);
     defer parser.scratch.deinit(gpa);
 
     try parser.run();
@@ -84,6 +80,39 @@ pub fn parse_value(
     };
     assert(root == .map);
     return root;
+}
+
+/// The byte offset in `input` of the value that `path` names, or of the deepest value along it
+/// that exists; 0 when `input` does not parse (or memory for a second parse is short). It
+/// parses again into a scratch tree that is dropped on return, so call it on the error path
+/// only: `toml.parse` uses it to put a reflect failure on a line:col. Tables sit at their key
+/// or header, array elements at their first byte (ADR 0005 section 6).
+/// Preconditions: `options.depth_max` in `1..core.value.nesting_max`; `path.count` is at most
+/// `core.value.nesting_max`.
+pub fn locate(
+    gpa: Allocator,
+    input: []const u8,
+    options: ParseOptions,
+    path: *const Path,
+) u32 {
+    assert(options.depth_max >= 1);
+    assert(options.depth_max <= core.value.nesting_max);
+    assert(path.count <= core.value.nesting_max);
+    if (input.len > options.bytes_max) return 0;
+
+    var tree: ValueTree = undefined;
+    tree.init(gpa);
+    defer tree.deinit();
+
+    var diag = Diagnostics.init(0, 0, "", null);
+    var parser: Parser = undefined;
+    parser.begin(gpa, &tree, input, options.depth_max, &diag) catch return 0;
+    defer parser.scratch.deinit(gpa);
+
+    parser.run() catch return 0;
+    const offset = parser.scratch.offset_of_path(path.segments[0..path.count]);
+    assert(offset <= input.len);
+    return offset;
 }
 
 /// Where a value goes: under a key of a table, or at the end of an array.
@@ -133,6 +162,26 @@ const Parser = struct {
     scratch: Scratch,
     /// The table that the keys of the current section go into.
     current: u32,
+
+    /// Fills `parser` in place and allocates its scratch; on error the scratch is not live and
+    /// `input`, `tree` and `diag` are set. `InputTooLarge` is the lexer's own limit.
+    fn begin(
+        parser: *Parser,
+        gpa: Allocator,
+        tree: *ValueTree,
+        input: []const u8,
+        depth_max: u16,
+        diag: *Diagnostics,
+    ) error{ InputTooLarge, OutOfMemory }!void {
+        parser.input = input;
+        parser.tree = tree;
+        parser.diag = diag;
+        parser.current = scratch_module.root_index;
+        parser.lexer.init(input) catch return error.InputTooLarge;
+        const input_len: u32 = @intCast(input.len); // The lexer accepted it, so it fits a u32.
+        try parser.scratch.init(gpa, input_len, depth_max);
+        assert(parser.scratch.node_count == 1);
+    }
 
     /// The statement loop. Each iteration consumes at least one byte, or returns at `.end`.
     fn run(parser: *Parser) ParseValueError!void {
