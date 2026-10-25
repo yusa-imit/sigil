@@ -18,7 +18,13 @@ All notable changes to this project are documented in this file. The format foll
 - `sigil.toml.parser` and `toml/scratch.zig` (plan 006 item 5): `parse_value` for dotted keys,
   `[table]` and `[[array]]` headers and scalar values, with the ADR 0005 redefinition state
   machine (`DuplicateKey`, `TableRedefined`, `TypeConflict`, `TooDeep`) reported at line:col.
-  Arrays and inline tables follow in item 6.
+- `toml/parser.zig` arrays and inline tables (plan 006 item 6): mixed-type arrays with newlines,
+  comments and a trailing comma, single-line inline tables frozen on close, on an explicit
+  bounded frame stack.
+- `sigil.toml` facade (plan 006 item 7): `toml.parse_value`, `toml.parse(T)` through
+  `reflect.parse`, `ParseOptions`, `ParseError` (25 variants), replacing the stub
+  `Error = error{NotImplemented}`. A reflect failure is re-located to the line:col of the key (or
+  array element) its key path names; the message stays reflect's. The writer follows in item 9.
 
 ### Changed
 

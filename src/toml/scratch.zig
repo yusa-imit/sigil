@@ -29,6 +29,7 @@ const core = @import("../core.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Map = core.Map;
+const Segment = @import("../reflect/context.zig").Segment;
 const Value = core.Value;
 const ValueTree = core.ValueTree;
 
@@ -138,6 +139,41 @@ pub const Scratch = struct {
     pub fn child_count(scratch: *const Scratch, index: u32) u32 {
         assert(index < scratch.node_count);
         return scratch.nodes[index].child_count;
+    }
+
+    /// The byte offset in the input of the node that `segments` names, or of the deepest node
+    /// along it that exists (the root is offset 0). A keyed node is placed at its key, an
+    /// array element at its first byte, a `[[array]]` element at its header key. A `.none`
+    /// segment stays where it is. Used to put a reflect failure on a line:col.
+    pub fn offset_of_path(scratch: *const Scratch, segments: []const Segment) u32 {
+        assert(segments.len <= core.value.nesting_max);
+        var current: u32 = root_index;
+        for (segments) |segment| {
+            const next: ?u32 = switch (segment) {
+                .none => current,
+                .key => |name| scratch.find(current, name),
+                .index => |position| scratch.child_at(current, position),
+            };
+            current = next orelse break;
+        }
+        const offset = scratch.nodes[current].offset;
+        assert(current < scratch.node_count);
+        return offset;
+    }
+
+    /// The `position`-th element of an array node (`array_static` or `array_tables`), or null
+    /// when `array` is not an array or `position` is past its end.
+    fn child_at(scratch: *const Scratch, array: u32, position: u64) ?u32 {
+        assert(array < scratch.node_count);
+        switch (scratch.nodes[array].state) {
+            .array_static, .array_tables => {},
+            .implicit, .header, .dotted, .inline_table, .scalar => return null,
+        }
+        if (position >= scratch.nodes[array].child_count) return null;
+        var child = scratch.nodes[array].first_child;
+        for (0..@as(usize, @intCast(position))) |_| child = scratch.nodes[child].next_sibling;
+        assert(child < scratch.node_count);
+        return child;
     }
 
     /// `[a.b]` / `[[a.b]]`, a segment that is not the last: returns the table to continue in.
