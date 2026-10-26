@@ -1,0 +1,6 @@
+Vendored from https://github.com/toml-lang/toml-test
+release v2.2.0, commit ce08da1ddb075d1c7596d663c7fcba9a2ae02c5c (2026-04-30).
+Files: the 884 paths listed in files-toml-1.0.0 (the TOML 1.0.0 cases of tests/valid and
+tests/invalid: .toml inputs, and .json expectations in toml-test's tagged JSON form), plus
+LICENSE. MIT license, Copyright (c) 2018 TOML authors; unmodified.
+Run by src/toml/conformance_test.zig, which reads the list and each file at run time.

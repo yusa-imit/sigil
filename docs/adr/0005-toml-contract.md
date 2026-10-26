@@ -243,7 +243,8 @@ is `eql` for every tree the writer accepts.
 checked at vendoring). Its expectation files are tagged JSON; the runner decodes them with
 **`std.json`**, not `sigil.json`, so no file under `src/toml/` imports `json/` even in tests. It
 renders each parsed `Value` into the same tagged form (floats and datetimes compared by value:
-floats as f64 with NaN equal to NaN, datetimes through `core.timestamp.format`) and compares
+floats as f64 with NaN equal to NaN, datetimes as the `core.timestamp.parse` value of the
+expected token, since the suite pads fractions to milliseconds and `format` does not) and compares
 structurally. Counts are asserted: valid, invalid, pass, reject, pinned-unsupported (each pin with
 a reason string, never a skip), and printed once per run.
 

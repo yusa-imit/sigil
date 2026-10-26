@@ -5,6 +5,7 @@
 //! entry point; `parse(T)` runs it, then `reflect.parse_traced`, and re-locates a reflect
 //! failure in the source: `diag` gets the line:col and snippet of the key (or array element)
 //! the key path names, and keeps reflect's message (ADR 0005 sections 6 and 7).
+//! `toml/conformance_test.zig` runs the vendored toml-test TOML 1.0.0 corpus (679 cases).
 //! The writer, `write_value` and `stringify` follow in plan 006 item 9; there are no file
 //! helpers in v0.5.0 (ADR 0005 section 7).
 //!
@@ -113,6 +114,7 @@ test {
     _ = @import("toml/parser_test.zig");
     _ = @import("toml/parser_value_test.zig");
     _ = @import("toml/parse_test.zig");
+    _ = @import("toml/conformance_test.zig");
 }
 
 test "toml: module compiles" {
