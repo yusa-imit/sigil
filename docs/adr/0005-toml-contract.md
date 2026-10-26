@@ -236,6 +236,12 @@ is `eql` for every tree the writer accepts.
 - Floats always carry `.`, an exponent, or are `inf`, `-inf`, `nan`; integers are decimal.
 - No dotted keys are written; there is no pretty-print option and no comments (PRD: none in v1).
 - Iteration uses an explicit bounded stack (`depth_max`); the writer allocates nothing.
+- As built (plan 006 item 9): a blank line precedes every header that is not the first output;
+  a table with only sub-tables still gets its own `[a]` line. Inline containers count against
+  `depth_max` with the header-form ones. A refused `.null` includes a `null` optional that
+  `reflect.stringify` produced, so `toml.stringify(T)` of a struct with an unset optional is
+  `Unrepresentable` at that field; omitting unset optionals is a `reflect` option, not a writer
+  rule. Float text is `core.number.format_float`, shared with `json/writer`.
 
 ### 9. The toml-test runner (g)
 
