@@ -25,6 +25,10 @@ All notable changes to this project are documented in this file. The format foll
   `reflect.parse`, `ParseOptions`, `ParseError` (25 variants), replacing the stub
   `Error = error{NotImplemented}`. A reflect failure is re-located to the line:col of the key (or
   array element) its key path names; the message stays reflect's. The writer follows in item 9.
+- TOML conformance (plan 006 item 8): the TOML 1.0.0 cases of toml-test v2.2.0 (MIT) vendored in
+  `tests/toml-test/` and run by `toml/conformance_test.zig`. Counts: 679 cases (474 invalid, 205
+  valid); 679 pass, 0 pinned divergent. Invalid cases are rejected with a line:col; valid cases
+  equal their tagged-JSON expectation.
 
 ### Changed
 
