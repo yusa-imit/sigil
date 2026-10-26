@@ -147,6 +147,50 @@ pub fn parse_decimal(text: []const u8) Error!Value {
     }
 }
 
+/// The longest text of one float: `-1.2345678901234567e-308` is 24 bytes, `.0` makes 26.
+pub const float_text_len_max: u32 = 32;
+
+comptime {
+    assert(float_text_len_max >= 26);
+}
+
+/// Shortest round-trip digits of a finite `number`, always with a `.` or an exponent so the text
+/// re-parses as a float. `{d}` when `number` is zero or `1e-6 <= |number| < 1e21`, else `{e}`:
+/// `{d}` of `5e-324` would be over 300 bytes. Returns a prefix of `buffer`.
+/// Preconditions: `number` is finite.
+pub fn format_float(buffer: *[float_text_len_max]u8, number: f64) []const u8 {
+    assert(std.math.isFinite(number));
+    const magnitude = @abs(number);
+    const plain = magnitude == 0 or (magnitude >= 1e-6 and magnitude < 1e21);
+    const text = if (plain) format_plain(buffer, number) else format_exponent(buffer, number);
+    if (std.mem.findAny(u8, text, ".e") != null) return text;
+    assert(text.len + 2 <= buffer.len);
+    buffer[text.len] = '.';
+    buffer[text.len + 1] = '0';
+    return buffer[0 .. text.len + 2];
+}
+
+fn format_plain(buffer: *[float_text_len_max]u8, number: f64) []const u8 {
+    // proof: 17 digits, 5 zeros, a sign and a point (25 bytes) fit in float_text_len_max - 2.
+    return std.fmt.bufPrint(buffer, "{d}", .{number}) catch unreachable;
+}
+
+fn format_exponent(buffer: *[float_text_len_max]u8, number: f64) []const u8 {
+    // proof: at most 17 digits, a sign, a point and "e-308" fit in float_text_len_max - 2.
+    return std.fmt.bufPrint(buffer, "{e}", .{number}) catch unreachable;
+}
+
+test "format_float: always carries a point or an exponent and re-parses to the same bits" {
+    const samples = [_]f64{ 0.0, -0.0, 1.0, -2.0, 0.5, 1e21, 1e-7, 5e-324, 1.7976931348623157e308 };
+    for (samples) |sample| {
+        var buffer: [float_text_len_max]u8 = undefined;
+        const text = format_float(&buffer, sample);
+        try std.testing.expect(std.mem.findAny(u8, text, ".e") != null);
+        const back = try parse_float(text);
+        try std.testing.expectEqual(@as(u64, @bitCast(sample)), @as(u64, @bitCast(back)));
+    }
+}
+
 test "is_decimal_literal: accepts well-formed decimal literals" {
     const valids = [_][]const u8{ "0", "-0", "007", "1.5", "-1.5e-3", "1e10", "1E+2", "0.0e0" };
     for (valids) |text| {

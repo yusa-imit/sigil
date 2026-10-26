@@ -24,14 +24,22 @@ All notable changes to this project are documented in this file. The format foll
 - `sigil.toml` facade (plan 006 item 7): `toml.parse_value`, `toml.parse(T)` through
   `reflect.parse`, `ParseOptions`, `ParseError` (25 variants), replacing the stub
   `Error = error{NotImplemented}`. A reflect failure is re-located to the line:col of the key (or
-  array element) its key path names; the message stays reflect's. The writer follows in item 9.
+  array element) its key path names; the message stays reflect's.
 - TOML conformance (plan 006 item 8): the TOML 1.0.0 cases of toml-test v2.2.0 (MIT) vendored in
   `tests/toml-test/` and run by `toml/conformance_test.zig`. Counts: 679 cases (474 invalid, 205
   valid); 679 pass, 0 pinned divergent. Invalid cases are rejected with a line:col; valid cases
   equal their tagged-JSON expectation.
+- `sigil.toml.writer` (plan 006 item 9): `toml.write_value` and `toml.stringify(T)` write a map
+  order-preserving, so parse -> write -> parse is `eql`: key/value lines, then the trailing run
+  of tables (`[a.b]`) and arrays of tables (`[[a]]`), every other nested map inline. Keys are
+  bare or basic-quoted, floats always carry `.` or an exponent (or are `inf`/`nan`), timestamps
+  print per kind. No allocation, explicit frame stacks. `WriteValueError` (6 variants):
+  `.null`, `.bytes`, a `.uint` above `maxInt(i64)` and a year past 9999 are `Unrepresentable`.
 
 ### Changed
 
+- `core.number.format_float` (shared shortest round-trip float text) moved out of `json/writer`
+  so JSON and TOML use one implementation; JSON output is unchanged.
 - `core.Timestamp` gains a required `kind` field (`instant`, `local_datetime`, `local_date`,
   `local_time`) and `check_invariants` (ADR 0005 section 2). Breaking for code that builds a
   `Timestamp` literal; allowed in a foundation MINOR during 0.x.

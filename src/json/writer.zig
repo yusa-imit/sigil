@@ -31,8 +31,8 @@ const nesting_max = core.value.nesting_max;
 /// The widest indent `Layout.pretty` accepts.
 pub const indent_spaces_max: u8 = 8;
 
-/// The longest text of one float: `-1.2345678901234567e-308` is 24 bytes, `.0` makes 26.
-pub const float_text_len_max: u32 = 32;
+/// The longest text of one float; the buffer `core.number.format_float` fills.
+pub const float_text_len_max: u32 = core.number.float_text_len_max;
 
 /// Whitespace of the output.
 pub const Layout = union(enum) {
@@ -59,7 +59,6 @@ pub const WriteValueError = core.unicode_escape.WriteError || error{ Unrepresent
 
 comptime {
     assert(@typeInfo(WriteValueError).error_set.?.len == 5);
-    assert(float_text_len_max >= 26);
 }
 
 /// Writes `value` to `w` as one JSON document. The `Value` is only read; it may be any tree,
@@ -297,7 +296,7 @@ const Emitter = struct {
         if (std.math.isNan(number)) return emitter.refuse(.nan);
         if (std.math.isInf(number)) return emitter.refuse(.infinity);
         var buffer: [float_text_len_max]u8 = undefined;
-        try emitter.w.writeAll(format_float(&buffer, number));
+        try emitter.w.writeAll(core.number.format_float(&buffer, number));
     }
 
     /// Writes `diag` for `err`: the key path of the member being written and the reason.
@@ -328,32 +327,6 @@ fn failure_reason(err: WriteValueError, refusal: Refusal) []const u8 {
         error.InputTooLarge => return "string is too large",
         error.WriteFailed => return "output writer failed",
     }
-}
-
-/// Shortest round-trip digits of a finite `number`, always with a `.` or an exponent so the text
-/// re-parses as a float. `{d}` when `number` is zero or `1e-6 <= |number| < 1e21`, else `{e}`:
-/// `{d}` of `5e-324` would be over 300 bytes.
-/// Preconditions: `number` is finite.
-fn format_float(buffer: *[float_text_len_max]u8, number: f64) []const u8 {
-    assert(std.math.isFinite(number));
-    const magnitude = @abs(number);
-    const plain = magnitude == 0 or (magnitude >= 1e-6 and magnitude < 1e21);
-    const text = if (plain) format_plain(buffer, number) else format_exponent(buffer, number);
-    if (std.mem.findAny(u8, text, ".e") != null) return text;
-    assert(text.len + 2 <= buffer.len);
-    buffer[text.len] = '.';
-    buffer[text.len + 1] = '0';
-    return buffer[0 .. text.len + 2];
-}
-
-fn format_plain(buffer: *[float_text_len_max]u8, number: f64) []const u8 {
-    // proof: 17 digits, 5 zeros, a sign and a point (25 bytes) fit in float_text_len_max - 2.
-    return std.fmt.bufPrint(buffer, "{d}", .{number}) catch unreachable;
-}
-
-fn format_exponent(buffer: *[float_text_len_max]u8, number: f64) []const u8 {
-    // proof: at most 17 digits, a sign, a point and "e-308" fit in float_text_len_max - 2.
-    return std.fmt.bufPrint(buffer, "{e}", .{number}) catch unreachable;
 }
 
 test {
