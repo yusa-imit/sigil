@@ -58,30 +58,30 @@ consumer asking for it; 2F stays out except the TOML fuzz in item 10 (PRD §6: p
       (no recursion): mixed-type arrays (TOML 1.0), multi-line arrays with comments and a
       trailing comma, single-line inline tables frozen after close. Tests: spec examples,
       nesting at 128 and 129, `{ a = 1, }` and a newline inside `{}` rejected.
-- [ ] **`toml.zig` facade and reflect.** The ADR 0005 (f) surface replaces the stub
+- [x] **`toml.zig` facade and reflect.** The ADR 0005 (f) surface replaces the stub
       `Error = error{NotImplemented}` (ADR 0001: no tagged `NotImplemented`); `toml.parse(T)`
       runs `reflect.parse` over the tree, result slices doc-commented as tree-owned. Tests: a
       zr-shaped config struct (tables, arrays of tables, optionals, `core.Timestamp`), unknown
       field and type mismatch report the TOML line:col.
-- [ ] **toml-test corpus.** Vendor the pinned toml-test release's TOML 1.0.0 valid and invalid
+- [x] **toml-test corpus.** Vendor the pinned toml-test release's TOML 1.0.0 valid and invalid
       cases with its license (MIT expected; check) and a `SOURCE` file, as `tests/jsonpath/`
       was. Run them from `zig build test`, valid compared against the tagged-JSON expectation
       (decoded per ADR 0005 (g)); assert the pass, reject and pinned-unsupported counts, never
       "no crash". Why careful: third-party bulk data; check size, and that `git ls-files`
       counts every file (the `.gitignore` `test_*` rule hid JSONTestSuite in plan 004).
       Verification: counts printed by the test and recorded in the CHANGELOG.
-- [ ] **`toml/writer.zig`.** Order-preserving writer: scalars, `[table]` and `[[array]]`
+- [x] **`toml/writer.zig`.** Order-preserving writer: scalars, `[table]` and `[[array]]`
       headers, inline form for maps inside arrays, keys quoted only when not bare, float always
       with `.`/exponent or `inf`/`nan`, timestamps per kind; `toml.stringify(T)`. Tests: every
       `Unrepresentable` case of ADR 0005 (d), a written spec example re-parses `eql`, root that
       is not a map refused.
-- [ ] **Round-trip property and seeded mutation.** A seeded generator of TOML-representable
+- [x] **Round-trip property and seeded mutation.** A seeded generator of TOML-representable
       `Value` trees (depth and width bounded): write -> parse -> `eql` over 1,000 seeds, and
       parse -> write -> parse over every valid corpus file (REALM rule). Seeded byte mutation
       of corpus files plus a `std.testing.fuzz` entry: each input gives a tree that passes
       `check_invariants` or a typed error with a position, never a panic. Verification:
       `zig build test`; seed count asserted.
-- [ ] **Benchmarks.** `zig build bench` adds TOML parse over a seeded ~100 KB document (PRD §5
+- [x] **Benchmarks.** `zig build bench` adds TOML parse over a seeded ~100 KB document (PRD §5
       target < 1 ms), `toml.parse(T)` and the writer; MB/s, ms and arena bytes per input byte
       recorded in `docs/plans/000-inherited.md`. Measure only; tuning is its own plan.
 - [ ] **Release v0.5.0.** Tick 3A in `000-inherited.md`, CHANGELOG `[0.5.0]`, `build.zig.zon`

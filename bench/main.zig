@@ -68,18 +68,38 @@ const query_descendants = "$..*";
 
 const query_filter = "$.records[?@.active == true && @.score >= 50.0].id";
 
+/// Which generated document a benchmark reads: the JSON one or the TOML one.
+const Format = enum { json, toml };
+
+/// The TOML document is at least this long (PRD section 5 targets a ~100 KB parse).
+const toml_bytes_min: u32 = 100_000;
+
+/// Seed of the TOML document generator.
+const toml_seed: u64 = 0x70_31;
+
+const toml_parse_options: sigil.toml.ParseOptions = .{
+    .depth_max = 64,
+    .bytes_max = 64 << 20,
+};
+
+const toml_stringify_options: sigil.toml.StringifyOptions = .{ .depth_max = 64 };
+
 const Bench = struct {
     name: []const u8,
+    format: Format,
     run: *const fn (Allocator, std.Io, []const u8) BenchError!Result,
 };
 
 const benches = [_]Bench{
-    .{ .name = "json.dom.parse", .run = bench_dom_parse },
-    .{ .name = "json.write.minified", .run = bench_write },
-    .{ .name = "json.parse(T)", .run = bench_parse_typed },
-    .{ .name = "path.pointer.resolve", .run = bench_pointer },
-    .{ .name = "path.jsonpath $..*", .run = bench_descendants },
-    .{ .name = "path.jsonpath filter", .run = bench_filter },
+    .{ .name = "json.dom.parse", .format = .json, .run = bench_dom_parse },
+    .{ .name = "json.write.minified", .format = .json, .run = bench_write },
+    .{ .name = "json.parse(T)", .format = .json, .run = bench_parse_typed },
+    .{ .name = "path.pointer.resolve", .format = .json, .run = bench_pointer },
+    .{ .name = "path.jsonpath $..*", .format = .json, .run = bench_descendants },
+    .{ .name = "path.jsonpath filter", .format = .json, .run = bench_filter },
+    .{ .name = "toml.parse_value", .format = .toml, .run = bench_toml_parse },
+    .{ .name = "toml.parse(T)", .format = .toml, .run = bench_toml_parse_typed },
+    .{ .name = "toml.write_value", .format = .toml, .run = bench_toml_write },
 };
 
 pub fn main(init: std.process.Init) !void {
@@ -92,23 +112,36 @@ pub fn main(init: std.process.Init) !void {
 
     assert(document.len >= document_bytes_min);
 
+    const toml_document = try generate_toml_document(init.gpa, toml_seed);
+    defer init.gpa.free(toml_document);
+
+    assert(toml_document.len >= toml_bytes_min);
+
     var stdout_buffer: [1024]u8 = undefined;
     var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
     const out = &stdout_writer.interface;
 
-    try out.print("document: {d} bytes (seed {d}), {d} iterations each\n", .{
+    try out.print("json document: {d} bytes (seed {d}), {d} iterations each\n", .{
         document.len, document_seed, iterations,
     });
+    try out.print("toml document: {d} bytes (seed {d})\n", .{ toml_document.len, toml_seed });
     for (benches) |bench| {
         if (filter) |needle| {
             if (std.mem.find(u8, bench.name, needle) == null) continue;
         }
-        const result = try bench.run(init.gpa, init.io, document);
+        const input = switch (bench.format) {
+            .json => document,
+            .toml => toml_document,
+        };
+        const result = try bench.run(init.gpa, init.io, input);
         try out.print("{s:<24} {d:>9.1} MB/s {d:>7.2} arena bytes/input byte", .{
             bench.name,
             megabytes_per_second(result.bytes_total, result.elapsed_ns),
-            arena_ratio(result.arena_bytes, document.len),
+            arena_ratio(result.arena_bytes, input.len),
         });
+        if (bench.format == .toml) {
+            try out.print(" {d:>8.3} ms/iter", .{milliseconds_per_iteration(result.elapsed_ns)});
+        }
         if (result.matches_total > 0) {
             try out.print(" {d:>9.1} ns/match", .{
                 nanoseconds_per_match(result.matches_total, result.elapsed_ns),
@@ -335,6 +368,116 @@ fn select_once(
     return selected.len;
 }
 
+/// The TOML benchmarks repeat this many times: one pass over ~100 KB takes about a millisecond.
+const toml_iterations: u32 = 256;
+
+fn bench_toml_parse(gpa: Allocator, io: std.Io, document: []const u8) BenchError!Result {
+    const arena_bytes = try toml_parse_once(gpa, document); // Warm-up: pages and caches.
+    const start = std.Io.Clock.awake.now(io);
+    for (0..toml_iterations) |_| {
+        const got = try toml_parse_once(gpa, document);
+        assert(got == arena_bytes);
+    }
+    return .{
+        .bytes_total = @as(u64, toml_iterations) * document.len,
+        .elapsed_ns = elapsed_ns_since(io, start),
+        .arena_bytes = arena_bytes,
+    };
+}
+
+/// Parses `document` into a fresh tree and returns the arena capacity it needed.
+fn toml_parse_once(gpa: Allocator, document: []const u8) BenchError!u64 {
+    var tree: sigil.core.ValueTree = undefined;
+    tree.init(gpa);
+    defer tree.deinit();
+
+    _ = try toml_parse_root(gpa, &tree, document);
+    return tree.arena.queryCapacity();
+}
+
+/// Parses `document` into `tree` and returns the root table, which borrows from the tree.
+fn toml_parse_root(
+    gpa: Allocator,
+    tree: *sigil.core.ValueTree,
+    document: []const u8,
+) BenchError!sigil.core.Value {
+    var diag = sigil.core.Diagnostics.init(0, 0, "", null);
+    return sigil.toml.parse_value(gpa, tree, document, toml_parse_options, &diag) catch |err| {
+        std.log.err("bench: toml parse failed: {s}: {s}", .{ @errorName(err), diag.message() });
+        return switch (err) {
+            error.OutOfMemory => error.OutOfMemory,
+            else => error.BenchFailed, // The generated document is valid; any other is a bug.
+        };
+    };
+}
+
+fn bench_toml_parse_typed(gpa: Allocator, io: std.Io, document: []const u8) BenchError!Result {
+    const arena_bytes = try toml_parse_typed_once(gpa, document); // Warm-up: pages and caches.
+    const start = std.Io.Clock.awake.now(io);
+    for (0..toml_iterations) |_| {
+        const got = try toml_parse_typed_once(gpa, document);
+        assert(got == arena_bytes);
+    }
+    return .{
+        .bytes_total = @as(u64, toml_iterations) * document.len,
+        .elapsed_ns = elapsed_ns_since(io, start),
+        .arena_bytes = arena_bytes,
+    };
+}
+
+/// Parses `document` into `Document` in a fresh tree and returns the arena capacity it needed.
+fn toml_parse_typed_once(gpa: Allocator, document: []const u8) BenchError!u64 {
+    var tree: sigil.core.ValueTree = undefined;
+    tree.init(gpa);
+    defer tree.deinit();
+
+    var diag = sigil.core.Diagnostics.init(0, 0, "", null);
+    const parsed = sigil.toml.parse(
+        Document,
+        gpa,
+        &tree,
+        document,
+        toml_parse_options,
+        &diag,
+    ) catch |err| {
+        std.log.err("bench: toml parse(T) failed: {s}: {s}", .{ @errorName(err), diag.message() });
+        return error.BenchFailed;
+    };
+    assert(parsed.records.len > 0);
+    return tree.arena.queryCapacity();
+}
+
+fn bench_toml_write(gpa: Allocator, io: std.Io, document: []const u8) BenchError!Result {
+    var tree: sigil.core.ValueTree = undefined;
+    tree.init(gpa);
+    defer tree.deinit();
+
+    const root = try toml_parse_root(gpa, &tree, document);
+    const output_bytes = try toml_write_once(root); // Warm-up: caches.
+    var bytes_total: u64 = 0;
+    const start = std.Io.Clock.awake.now(io);
+    for (0..toml_iterations) |_| {
+        const got = try toml_write_once(root);
+        assert(got == output_bytes);
+        bytes_total += got;
+    }
+    const elapsed_ns = elapsed_ns_since(io, start);
+    assert(bytes_total > 0);
+    return .{ .bytes_total = bytes_total, .elapsed_ns = elapsed_ns, .arena_bytes = 0 };
+}
+
+/// Writes `root` as TOML into a discarding sink and returns the output length.
+fn toml_write_once(root: sigil.core.Value) BenchError!u64 {
+    var buffer: [4096]u8 = undefined;
+    var sink = std.Io.Writer.Discarding.init(&buffer);
+    var diag = sigil.core.Diagnostics.init(0, 0, "", null);
+    sigil.toml.write_value(&sink.writer, root, toml_stringify_options, &diag) catch |err| {
+        std.log.err("bench: toml write failed: {s}: {s}", .{ @errorName(err), diag.message() });
+        return error.BenchFailed;
+    };
+    return sink.fullCount();
+}
+
 fn fail_parse(err: sigil.json.ParseValueError) BenchError {
     std.log.err("bench: parse failed: {s}", .{@errorName(err)});
     return switch (err) {
@@ -396,6 +539,57 @@ fn write_record(w: *std.Io.Writer, random: std.Random, index: u32) std.Io.Writer
     try w.print("],\"owner\":{{\"x\":{d},\"y\":{d}}}}}", .{ x, y });
 }
 
+/// Builds the seeded TOML document, one `[[records]]` table per record, in `gpa` memory, at
+/// least `toml_bytes_min` long. Same seed, same bytes. Caller frees the result.
+fn generate_toml_document(gpa: Allocator, seed: u64) Allocator.Error![]u8 {
+    var prng = std.Random.DefaultPrng.init(seed);
+    const random = prng.random();
+
+    var out: std.Io.Writer.Allocating = .init(gpa);
+    defer out.deinit();
+
+    const w = &out.writer;
+    var index: u32 = 0;
+    for (0..record_count_max) |_| {
+        if (out.written().len >= toml_bytes_min) break;
+        write_toml_record(w, random, index) catch return error.OutOfMemory;
+        index += 1;
+    }
+    assert(out.written().len >= toml_bytes_min);
+    return out.toOwnedSlice();
+}
+
+fn write_toml_record(w: *std.Io.Writer, random: std.Random, index: u32) std.Io.Writer.Error!void {
+    const words = [_][]const u8{ "alpha", "bravo", "charlie", "delta", "echo", "foxtrot" };
+    // Every draw is a named local, in a fixed order, as in `write_record`.
+    const name = words[random.uintLessThan(usize, words.len)];
+    const suffix = random.uintLessThan(u32, 1000);
+    const score = @as(f64, @floatFromInt(random.uintLessThan(u32, 100_000))) / 100.0;
+    const active = random.boolean();
+    try w.print("[[records]]\nid = {d}\nname = \"{s}-{d}\"\nscore = {d:.2}\nactive = {s}\n", .{
+        index,
+        name,
+        suffix,
+        score,
+        if (active) "true" else "false",
+    });
+    try w.writeAll("tags = [");
+    const tag_count = random.uintLessThan(usize, 4);
+    for (0..tag_count) |tag_index| {
+        const tag = words[random.uintLessThan(usize, words.len)];
+        if (tag_index > 0) try w.writeAll(", ");
+        try w.print("\"{s}\"", .{tag});
+    }
+    const x = random.intRangeAtMost(i32, -100_000, 100_000);
+    const y = random.intRangeAtMost(i32, -100_000, 100_000);
+    try w.print("]\nowner = {{ x = {d}, y = {d} }}\n\n", .{ x, y });
+}
+
+/// Milliseconds one iteration of a TOML benchmark took on average.
+fn milliseconds_per_iteration(elapsed_ns: u64) f64 {
+    return @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(toml_iterations)) / 1e6;
+}
+
 /// Nanoseconds from `start` to now on the awake clock; the clock never runs backwards.
 fn elapsed_ns_since(io: std.Io, start: std.Io.Timestamp) u64 {
     const elapsed = start.untilNow(io, .awake).toNanoseconds();
@@ -452,16 +646,52 @@ test "bench: each benchmark measures bytes and time over the generated document"
     const document = try generate_document(std.testing.allocator, document_seed);
     defer std.testing.allocator.free(document);
 
+    const toml_document = try generate_toml_document(std.testing.allocator, toml_seed);
+    defer std.testing.allocator.free(toml_document);
+
     for (benches) |bench| {
-        const result = try bench.run(std.testing.allocator, std.testing.io, document);
+        const input = switch (bench.format) {
+            .json => document,
+            .toml => toml_document,
+        };
+        const result = try bench.run(std.testing.allocator, std.testing.io, input);
         const is_path = std.mem.startsWith(u8, bench.name, "path.");
         const is_pointer = std.mem.eql(u8, bench.name, "path.pointer.resolve");
         try std.testing.expectEqual(!is_pointer, result.bytes_total > 0);
         try std.testing.expect(result.elapsed_ns > 0);
-        const has_arena = !std.mem.eql(u8, bench.name, "json.write.minified") and !is_path;
-        try std.testing.expectEqual(has_arena, result.arena_bytes > 0);
+        const is_write = std.mem.eql(u8, bench.name, "json.write.minified") or
+            std.mem.eql(u8, bench.name, "toml.write_value");
+        try std.testing.expectEqual(!is_write and !is_path, result.arena_bytes > 0);
         try std.testing.expectEqual(is_path, result.matches_total > 0);
     }
+}
+
+test "bench: the TOML document is deterministic, valid, and long enough" {
+    const first = try generate_toml_document(std.testing.allocator, toml_seed);
+    defer std.testing.allocator.free(first);
+
+    const second = try generate_toml_document(std.testing.allocator, toml_seed);
+    defer std.testing.allocator.free(second);
+
+    try std.testing.expect(first.len >= toml_bytes_min);
+    try std.testing.expectEqualSlices(u8, first, second);
+
+    const other = try generate_toml_document(std.testing.allocator, toml_seed + 1);
+    defer std.testing.allocator.free(other);
+
+    try std.testing.expect(!std.mem.eql(u8, first, other));
+
+    var tree: sigil.core.ValueTree = undefined;
+    tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    const root = try toml_parse_root(std.testing.allocator, &tree, first);
+    const records = root.map.get("records") orelse return error.TestUnexpectedResult;
+    try std.testing.expect(records.array.len > 1);
+    try std.testing.expectEqual(
+        @as(f64, 0.5),
+        milliseconds_per_iteration(@as(u64, toml_iterations) * 500_000),
+    );
 }
 
 test "bench: the pointer and query benchmarks match what the document holds" {
