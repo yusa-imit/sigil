@@ -35,6 +35,11 @@ All notable changes to this project are documented in this file. The format foll
   bare or basic-quoted, floats always carry `.` or an exponent (or are `inf`/`nan`), timestamps
   print per kind. No allocation, explicit frame stacks. `WriteValueError` (6 variants):
   `.null`, `.bytes`, a `.uint` above `maxInt(i64)` and a year past 9999 are `Unrepresentable`.
+- TOML round-trip property and mutation (plan 006 item 10, `toml/roundtrip_test.zig`): 1,000
+  seeded `Value` trees go write -> parse -> `eql` and a second write is byte-identical; all 205
+  valid corpus files go parse -> write -> parse; 1,640 seeded byte mutations of them (663
+  accepted and round-tripped, 977 rejected with a line:col) and a `std.testing.fuzz` entry hold
+  the same oracle: invariants on every accepted tree, a typed error with a position otherwise.
 
 ### Changed
 

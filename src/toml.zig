@@ -5,7 +5,8 @@
 //! entry point; `parse(T)` runs it, then `reflect.parse_traced`, and re-locates a reflect
 //! failure in the source: `diag` gets the line:col and snippet of the key (or array element)
 //! the key path names, and keeps reflect's message (ADR 0005 sections 6 and 7).
-//! `toml/conformance_test.zig` runs the vendored toml-test TOML 1.0.0 corpus (679 cases).
+//! `toml/conformance_test.zig` runs the vendored toml-test TOML 1.0.0 corpus (679 cases);
+//! `toml/roundtrip_test.zig` holds the round-trip property, corpus mutations and the fuzz entry.
 //! `toml/writer.zig` writes a `Value` order-preserving; `write_value` is its entry point and
 //! `stringify(T)` runs `reflect.stringify` first. There are no file helpers in v0.5.0
 //! (ADR 0005 section 7).
@@ -164,6 +165,7 @@ test {
     _ = @import("toml/conformance_test.zig");
     _ = @import("toml/writer.zig");
     _ = @import("toml/stringify_test.zig");
+    _ = @import("toml/roundtrip_test.zig");
 }
 
 test "toml: module compiles" {
