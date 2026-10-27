@@ -29,7 +29,7 @@ const pending_max: u32 = 4096;
 
 /// Counts of the vendored suite. A different total means the vendoring changed.
 const case_count: u32 = 679;
-const valid_count: u32 = 205;
+pub const valid_count: u32 = 205;
 const invalid_count: u32 = 474;
 const divergent_count: u32 = 0;
 
@@ -155,7 +155,7 @@ fn expectation_matches(want: *const std.json.Value, got: *const Value) error{Sta
     return error.StackFull;
 }
 
-fn read_case(gpa: std.mem.Allocator, path: []const u8) ![]u8 {
+pub fn read_case(gpa: std.mem.Allocator, path: []const u8) ![]u8 {
     const full = try std.fmt.allocPrint(gpa, "{s}{s}", .{ suite_dir, path });
     defer gpa.free(full);
 
