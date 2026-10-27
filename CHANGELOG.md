@@ -95,6 +95,9 @@ setup.
 - Path benchmarks (plan 005 item 9): `zig build bench` adds `path.pointer.resolve`,
   `path.jsonpath $..*` and `path.jsonpath filter` over the seeded ~1 MiB document, printing ns per
   match beside MB/s; numbers recorded in `docs/plans/000-inherited.md` (measured, not tuned).
+- TOML benchmarks (plan 006 item 11): `zig build bench` adds `toml.parse_value`, `toml.parse(T)` and
+  `toml.write_value` over a seeded ~100 KB `[[records]]` document, printing ms per iteration beside
+  MB/s; numbers recorded in `docs/plans/000-inherited.md` (measured, not tuned).
 
 ### Removed
 

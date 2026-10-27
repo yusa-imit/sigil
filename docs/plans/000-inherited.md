@@ -66,7 +66,10 @@
 | 2026-10-18 | JSON Pointer 파싱 + resolve (`/records/<i>/owner/x`) | 약 31 ns/조회 | 미정 | `path.pointer.resolve`, 조회마다 파싱 포함 |
 | 2026-10-18 | JSONPath `$..*` (select) | 약 2150 MB/s, 약 5 ns/노드 | 미정 | `path.jsonpath $..*`, 컴파일 제외 |
 | 2026-10-18 | JSONPath 필터 (`$.records[?@.active == true && @.score >= 50.0].id`) | 약 2200 MB/s, 약 109 ns/일치 | 미정 | `path.jsonpath filter`, 일치 = 선택된 `id` 노드 |
+| 2026-10-28 | TOML 파싱 (DOM, 100 KB 생성 문서) | 약 225 MB/s, 약 0.44 ms | < 1 ms (PRD §5) | `toml.parse_value`, arena 4.73 B/입력 B |
+| 2026-10-28 | TOML 파싱 (reflect → struct) | 약 210 MB/s, 약 0.48 ms | < 1 ms (PRD §5) | `toml.parse(T)`, arena 8.53 B/입력 B |
+| 2026-10-28 | TOML 직렬화 | 약 590 MB/s, 약 0.17 ms | 미정 | `toml.write_value`, 출력 바이트 기준 |
 
 측정 조건: Apple Silicon 로컬, `zig build bench` (ReleaseFast), 시드 고정 약 1 MiB 생성 문서(twitter.json
 아님), 16회 반복, 워밍업 1회 제외, 수 회 실행 중 근사 중앙값. 첫 벤치는 실행 순서에 따라 최대 약 20% 흔들린다. 목표 미달은 plan 004의
-범위 밖이며(측정만 수행), 튜닝은 별도 plan에서 다룬다.
+범위 밖이며(측정만 수행), 튜닝은 별도 plan에서 다룬다. TOML 행은 시드 고정 약 100 KB `[[records]]` 문서에 256회 반복.
