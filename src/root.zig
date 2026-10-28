@@ -7,7 +7,7 @@
 
 const std = @import("std");
 
-pub const version = std.SemanticVersion{ .major = 0, .minor = 4, .patch = 0 };
+pub const version = std.SemanticVersion{ .major = 0, .minor = 5, .patch = 0 };
 
 comptime {
     // REALM.md's release quirk: 0.x means "nothing shippable yet" (Phase 1
@@ -36,10 +36,10 @@ test {
     std.testing.refAllDecls(@This());
 }
 
-test "version: library constant is 0.4.0 (plan 005 item 10)" {
+test "version: library constant is 0.5.0 (plan 006 item 12)" {
     // Pins the version bump so a partial edit (constant without manifest, or vice
     // versa) fails loudly instead of silently drifting.
-    try std.testing.expectEqual(@as(u32, 4), version.minor);
+    try std.testing.expectEqual(@as(u32, 5), version.minor);
     try std.testing.expectEqual(@as(u32, 0), version.patch);
 }
 

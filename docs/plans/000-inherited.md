@@ -29,7 +29,7 @@
 
 ## Phase 3 — TOML & YAML
 
-- [ ] 3A `toml/{lexer,parser,writer}.zig` — toml-test
+- [x] 3A `toml/{lexer,parser,writer}.zig` — toml-test
 - [ ] 3B `yaml/{scanner,parser,writer}.zig`
 - [ ] 3C zr TOML/YAML on sigil (PoC)
 
