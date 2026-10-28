@@ -97,7 +97,8 @@ most `depth_max` containers are open at once, which gives the last term). The tw
 the node array and a hash index over (parent, key), sized to a power of two at least twice
 `nodes_max`, so a lookup is O(1) and a table with a million keys is not quadratic. `Map.put`
 is not used by `materialize`, since its duplicate scan is linear; the index has already proved
-the keys unique. Key bytes borrow the input unless an escape was decoded (then they already live in the tree arena).
+the keys unique. Key bytes borrow the input unless an escape was decoded (then they already
+live in the tree arena).
 
 The benchmark (item 11) records scratch bytes per input byte beside arena bytes per input byte.
 If the `input.len / 2 + 1` bound proves wasteful the bound is tightened by a cheap pre-count of
@@ -128,7 +129,8 @@ these.
   key through a table made by any header, implicit or not, is `TableRedefined`
   (toml-test `append-with-dotted-keys-1/2`).
 - Inside `{ }` the same rules apply to the inline table's own subtree, with the inline state
-  assigned at the closing brace. Each `[[a]]` element starts as `header`.
+  assigned when the `{` is read (the table is frozen to headers from then on).
+  Each `[[a]]` element starts as `header`.
 - A key assigned twice, or a value assigned where a table/array already sits, is `DuplicateKey`
   (the name `core.Map.put` already uses). Keys compare as bytes after escape decoding, so
   `"a"` and `a` collide.
@@ -158,10 +160,11 @@ these.
   `TooDeep` points at the segment or bracket that exceeds the limit.
 - **Input** longer than `bytes_max` (a `u32`, at most `Lexer.input_len_max` = `maxInt(u32) - 16`,
   headroom for the lexer's `offset + 8` lookahead) is `InputTooLarge` before any
-  byte is read. Tokens are bounded by input; the one other limit: a number containing `_` and longer than
-  `number_text_max` (512) is `InvalidNumber`, because underscores are stripped into that buffer. Lexer string and number
-  scratch is one bounded buffer of `number_text_max` bytes (numbers) and decodes strings straight
-  into the tree arena (a decoded string is never longer than its source, ADR 0003 §1).
+  byte is read. Tokens are bounded by input; the one other limit: a number containing `_` and
+  longer than `number_text_max` (512) is `InvalidNumber`, because underscores are stripped into
+  that buffer. Lexer string and number scratch is one bounded buffer of `number_text_max` bytes
+  (numbers) and decodes strings straight into the tree arena (a decoded string is never longer
+  than its source, ADR 0003 §1).
 - **Lines**: LF and CRLF end a line; a bare CR is `UnexpectedToken`. A BOM is `UnexpectedToken`.
   A control character other than tab (and DEL) in a comment or string is `ControlCharacter`.
   `col` is bytes, 1-based (ADR 0003 §2).
