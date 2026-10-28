@@ -6,6 +6,11 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-28
+
+Plan 006 (Phase 3A): `sigil.toml` is real. A TOML 1.0 parser and writer over `Value`, passing
+the full toml-test v2.2.0 TOML 1.0.0 corpus, with no recursion and no allocation after setup.
+
 ### Added
 
 - `sigil.core.timestamp` (plan 006 item 2): proleptic Gregorian civil date <-> days and RFC 3339
