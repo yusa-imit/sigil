@@ -296,3 +296,56 @@ test "parser: arrays and inline tables under every allocation failure never leak
     }
     try expect(reached_success);
 }
+
+test "parser: dotted keys inside one inline table share their sub-table" {
+    var tree: ValueTree = undefined;
+    tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    const root = try parse_ok(&tree, "a = { b.c = 1, b.d = 2, e = 3 }\n");
+    const b = try field(try field(root, "a"), "b");
+    try expect_keys(b, &.{ "c", "d" });
+    try expectEqual(@as(i64, 2), (try field(b, "d")).int);
+    try expectEqual(@as(i64, 3), (try field(try field(root, "a"), "e")).int);
+}
+
+test "parser: comments and line endings between array elements" {
+    var tree: ValueTree = undefined;
+    tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    const root = try parse_ok(
+        &tree,
+        "a = [ # one\r\n  1, # two\r\n  2 # three\r\n]\r\nb = [\r\n3,\r\n]\r\n",
+    );
+    const a = (try field(root, "a")).array;
+    try expectEqual(@as(usize, 2), a.len);
+    try expectEqual(@as(i64, 2), a[1].int);
+    try expectEqual(@as(usize, 1), (try field(root, "b")).array.len);
+}
+
+test "parser: a comment inside an inline table is rejected" {
+    // A comment runs to the end of the line, so the newline that ends it, which an inline
+    // table may not contain, is the offending token.
+    try expect_failure("a = { # c\n}\n", error.UnexpectedToken, 1, 10);
+    try expect_failure("a = { b = 1 # c\n}\n", error.UnexpectedToken, 1, 16);
+    try expect_failure("a = { b = 1, # c\n c = 2 }\n", error.UnexpectedToken, 1, 17);
+}
+
+test "parser: every prefix of a nested document ends in a parse error, never OutOfMemory" {
+    const input =
+        "a = [1, { b = \"x\", c.d = [[], [2]] }]\n[e]\nf = { g = [[[]]] }\n[[h]]\ni = 0x1f\n";
+    var tree: ValueTree = undefined;
+    for (0..input.len + 1) |len| {
+        tree.init(std.testing.allocator);
+        defer tree.deinit();
+
+        var diag = Diagnostics.init(0, 0, "untouched", null);
+        if (parse_with(&tree, input[0..len], options_default, &diag)) |_| {
+            // A prefix ending at a statement boundary is itself a valid document.
+        } else |err| {
+            try expect(!std.mem.eql(u8, @errorName(err), "OutOfMemory"));
+            try expect(diag.line >= 1);
+        }
+    }
+}
