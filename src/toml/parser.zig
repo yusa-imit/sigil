@@ -255,6 +255,7 @@ const Parser = struct {
     /// The value after `=`, stored under `key` in table `parent`. Containers are filled
     /// iteratively: `stack` holds the open ones, the innermost last.
     fn read_value(parser: *Parser, parent: u32, key: Key) ParseValueError!void {
+        assert(parent < parser.scratch.node_count);
         var stack: [core.value.nesting_max]Frame = undefined;
         var depth: u32 = 0;
         const first = try parser.lexer.next(parser.diag, .value);
@@ -262,6 +263,8 @@ const Parser = struct {
         stack[0] = (try parser.place(root_target, first)) orelse return;
         depth = 1;
         for (0..parser.input.len + 1) |_| {
+            assert(depth >= 1);
+            assert(depth <= stack.len);
             switch (try parser.step(&stack[depth - 1])) {
                 .none => {},
                 .close => {
@@ -270,6 +273,7 @@ const Parser = struct {
                 },
                 .open => |frame| {
                     assert(depth < stack.len); // proof: `link` refused a container past depth_max.
+                    assert(frame.need == .first);
                     stack[depth] = frame;
                     depth += 1;
                 },
@@ -280,12 +284,15 @@ const Parser = struct {
 
     /// One token of the innermost open container: a value, a comma or the closer.
     fn step(parser: *Parser, frame: *Frame) ParseValueError!Step {
+        assert(frame.node < parser.scratch.node_count);
+        assert(frame.node != scratch_module.root_index);
         if (frame.is_array) return parser.array_step(frame);
         return parser.table_step(frame);
     }
 
     fn array_step(parser: *Parser, frame: *Frame) ParseValueError!Step {
         assert(frame.is_array);
+        assert(parser.scratch.state_of(frame.node) == .array_static);
         const token = try parser.next_array_token();
         switch (frame.need) {
             .comma_or_close => switch (token.kind) {
@@ -305,6 +312,7 @@ const Parser = struct {
 
     fn table_step(parser: *Parser, frame: *Frame) ParseValueError!Step {
         assert(!frame.is_array);
+        assert(parser.scratch.state_of(frame.node) == .inline_table);
         const token = try parser.lexer.next(parser.diag, .key);
         switch (frame.need) {
             .comma_or_close => switch (token.kind) {
@@ -339,6 +347,11 @@ const Parser = struct {
     /// Stores the value that starts at `token` at `target`. A scalar or string is stored and
     /// gives null; `[` or `{` creates the container and returns its frame to fill.
     fn place(parser: *Parser, target: Target, token: Token) ParseValueError!?Frame {
+        assert(token.offset < parser.input.len or token.kind == .end);
+        switch (target) {
+            .keyed => |keyed| assert(keyed.cursor < parser.scratch.node_count),
+            .element => |array| assert(parser.scratch.state_of(array) == .array_static),
+        }
         switch (token.kind) {
             .bracket_open => return try parser.place_container(target, token, .array_static),
             .brace_open => return try parser.place_container(target, token, .inline_table),
@@ -365,6 +378,7 @@ const Parser = struct {
             .element => |array| parser.scratch.append_container(array, state, token.offset),
         };
         const node = created catch |err| return parser.scratch_fail(err, target_key(target, token));
+        assert(parser.scratch.state_of(node) == state);
         return .{ .node = node, .is_array = state == .array_static, .need = .first };
     }
 
