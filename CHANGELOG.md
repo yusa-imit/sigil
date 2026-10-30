@@ -6,6 +6,13 @@ All notable changes to this project are documented in this file. The format foll
 
 ## [Unreleased]
 
+### Added
+
+- `sigil.msgpack.decoder.Reader` (plan 007 item 2): a pull reader for MessagePack heads over one
+  slice, with every format family, integers normalized to `int` below 2^63, bit-exact float
+  widening, strict UTF-8 `str`, borrowed `bin`/`ext` payloads, the ADR 0006 bomb rule and
+  `byte N` diagnostics (line 1, col = offset + 1).
+
 ## [0.5.0] - 2026-10-28
 
 Plan 006 (Phase 3A): `sigil.toml` is real. A TOML 1.0 parser and writer over `Value`, passing

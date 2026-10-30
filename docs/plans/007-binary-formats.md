@@ -39,7 +39,7 @@ width, tags/ext), so one ADR and one plan cover them.
       zero-copy), how a `[]const u8` field meets `.bytes` in `reflect`; (j) where the vector
       runners live (test-only, as `toml/conformance_test.zig`). Amends PRD section 4.3 rows.
       Verification: `docs/adr/0006-binary-contract.md` exists.
-- [ ] **`msgpack/decoder.zig`: reader.** Pull reader over one complete slice (ADR 0003
+- [x] **`msgpack/decoder.zig`: reader.** Pull reader over one complete slice (ADR 0003
       section 1 shape): every format family, u32 offsets (tidy bans `usize` in `msgpack/`),
       declared lengths checked against the remainder. Tests: one case per first byte
       0x00-0xff incl. reserved 0xc1 (typed error at its offset), truncation at every byte of a
