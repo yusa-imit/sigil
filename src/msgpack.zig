@@ -8,6 +8,8 @@
 
 const std = @import("std");
 
+pub const decoder = @import("msgpack/decoder.zig");
+
 /// Module-level error set. Extend as functionality lands; keep names descriptive
 /// (`error.ChecksumMismatch`, not `error.Invalid`).
 pub const Error = error{
@@ -16,4 +18,8 @@ pub const Error = error{
 
 test "msgpack: module compiles" {
     std.testing.refAllDecls(@This());
+}
+
+test {
+    _ = @import("msgpack/decoder_test.zig");
 }
