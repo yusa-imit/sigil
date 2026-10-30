@@ -120,8 +120,8 @@ try sigil.json.stringify(Config, &tree, &writer, cfg, stringify_options, &diag);
 | JSON | RFC 8259 엄격: 완전한 슬라이스 위 무할당 pull 스캐너 + DOM(카운트 패스 후 정확한 크기로 1회 할당, 재귀 없음) | minify/pretty(`indent_spaces`), `sort_keys`(키 바이트 순, 무할당). `.bytes`/`.timestamp`/NaN/inf는 `Unrepresentable`. float는 항상 `.0` 또는 지수 포함 | i64/u64/f64 구분, u64 초과 정수는 에러(float로 바꾸지 않음). BOM·주석·후행 쉼표 거부. 깊이 128(`TooDeep`). 중복 키 `reject`/`last`. 진단은 1-based line:col(col은 바이트). 계약 전체는 `docs/adr/0003-json-contract.md` |
 | TOML | v1.0.0 전체: 완전한 슬라이스 위 pull 렉서 + 테이블당 1상태 재정의 규칙, 스크래치 트리 후 정확한 크기 1회 복사(재귀 없음) | 순서 보존(스칼라 뒤에 오는 테이블은 인라인), 주석 보존 없음(v1). 라운드트립 `eql` | 날짜/시간 4종은 `Timestamp.kind`, 정수 i64(초과 `IntegerAboveMax`), NaN 정규화. 깊이 128(루트 포함, 헤더 127 세그먼트). toml-test 스위트 통과. 계약 전체는 `docs/adr/0005-toml-contract.md` |
 | YAML | 1.2 코어 스키마 서브셋: 블록/플로우 매핑·시퀀스, 스칼라, 앵커/별칭, 멀티라인 | 블록 스타일 | 태그(!!) 미지원, 문서 스트림(`---`) 지원. 빌리언 러프 방어(별칭 확장 제한) |
-| MessagePack | 전 타입, ext | | 스트리밍, 제로카피 bin/str |
-| CBOR | RFC 8949 코어, 태그 0/1/2/3 | 결정론적 인코딩 옵션 | |
+| MessagePack | 전 타입, 타임스탬프 ext(-1)만 지원: 완전한 슬라이스 위 pull 리더(제로카피 토큰) + 트리 1패스 | 가장 짧은 헤드, float 32/64 최단 | bin→`bytes`, 정수 폭 비보존(`uint`는 i64 초과만), 키는 문자열만, 오프셋 있는 timestamp는 `Unrepresentable`. 깊이 128, 선언 길이는 남은 바이트로 검증 후 할당. 계약 전체는 `docs/adr/0006-binary-contract.md` |
+| CBOR | RFC 8949 코어, 태그 0/1/2/3, 무한 길이는 카운팅 패스 후 빌드 | 선호 직렬화(최단 헤드·float), 결정론적 모드(키를 인코딩 바이트 순 정렬) | 키는 문자열만, 기타 태그·simple은 타입 에러, NaN 단일 인코딩. 계약 전체는 `docs/adr/0006-binary-contract.md` |
 | Protobuf | 와이어 포맷(varint/64/len/32), 필드번호 comptime 매핑 | | 스키마 없이 comptime 구조체 어노테이션으로 인코딩. `sigil_proto = .{ .name = 1, .port = 2 }` |
 | CSV | RFC 4180, 구분자/인용 설정 | | 헤더 → 구조체 필드 매핑 |
 
