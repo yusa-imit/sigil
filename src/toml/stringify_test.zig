@@ -172,3 +172,33 @@ test "stringify: reflect's InvalidUtf8 writes nothing" {
     try testing.expectEqualStrings("", aw.written());
     try testing.expect(std.mem.startsWith(u8, diag.message(), "text: invalid UTF-8 at byte 1"));
 }
+
+const Blob = struct {
+    data: []const u8,
+    pub const sigil_options = .{ .bytes = .{"data"} };
+};
+
+test "stringify: a field listed in sigil_options.bytes is Unrepresentable as TOML" {
+    var tree: ValueTree = undefined;
+    tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+
+    var diag = Diagnostics.init(777, 0, "untouched", null);
+    const result = toml.stringify(Blob, &tree, &aw.writer, .{ .data = "ab" }, write_options, &diag);
+    try std.testing.expectError(error.Unrepresentable, result);
+    try std.testing.expectEqualStrings("data: bytes cannot be written as TOML", diag.message());
+}
+
+test "parse: a TOML string for a field listed in sigil_options.bytes is a TypeMismatch" {
+    var tree: ValueTree = undefined;
+    tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    var diag = Diagnostics.init(777, 0, "untouched", null);
+    const text = "data = \"ab\"\n";
+    const result = toml.parse(Blob, std.testing.allocator, &tree, text, parse_options, &diag);
+    try std.testing.expectError(error.TypeMismatch, result);
+}

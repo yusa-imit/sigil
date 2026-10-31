@@ -134,14 +134,15 @@ test "facade: a str in a bytes field and a bin in a text field are TypeMismatch"
     const str_for_bin = "\x82\xa5index\x07\xa7payload\xa2ab";
     const wrong_payload = msgpack.parse(Entry, &tree, str_for_bin, parse_options, &diag);
     try expectError(error.TypeMismatch, wrong_payload);
-    try expectEqualStrings("payload: expected bytes, found string", diag.message());
+    try expectEqual(@as(u32, 17), diag.col);
+    try expectEqualStrings("byte 16: payload: expected bytes, found string", diag.message());
 
     const Plain = struct { note: []const u8 };
     diag = fresh_diag();
     const bin_for_str = "\x81\xa4note\xc4\x02ab";
     const result = msgpack.parse(Plain, &tree, bin_for_str, parse_options, &diag);
     try expectError(error.TypeMismatch, result);
-    try expectEqualStrings("note: expected string, found bytes", diag.message());
+    try expectEqualStrings("byte 6: note: expected string, found bytes", diag.message());
 }
 
 test "facade: an optional bytes field reads nil as null and bin as the data" {
@@ -163,7 +164,7 @@ test "facade: an optional bytes field reads nil as null and bin as the data" {
         error.TypeMismatch,
         msgpack.parse(Holder, &tree, "\x81\xa6digest\x05", parse_options, &diag),
     );
-    try expectEqualStrings("digest: expected bytes, found int", diag.message());
+    try expectEqualStrings("byte 8: digest: expected bytes, found int", diag.message());
 }
 
 test "facade: decode errors carry their byte position, reflect errors their key path" {
@@ -183,14 +184,17 @@ test "facade: decode errors carry their byte position, reflect errors their key 
     const bad_field = "\x82\xa5index\xa1x\xa7payload\xc4\x00";
     const wrong = msgpack.parse(Entry, &tree, bad_field, parse_options, &diag);
     try expectError(error.TypeMismatch, wrong);
-    try expectEqual(core.diagnostics.position_none, diag.line);
-    try expectEqualStrings("index: expected integer, found string", diag.message());
+    // The offending `index` value is the str at byte 7.
+    try expectEqual(@as(u32, 1), diag.line);
+    try expectEqual(@as(u32, 8), diag.col);
+    try expectEqualStrings("byte 7: index: expected integer, found string", diag.message());
 
     diag = fresh_diag();
     const missing = "\x81\xa5index\x07";
     const absent = msgpack.parse(Entry, &tree, missing, parse_options, &diag);
     try expectError(error.MissingField, absent);
-    try expectEqualStrings("missing field \"payload\"", diag.message());
+    try expectEqual(@as(u32, 1), diag.col);
+    try expectEqualStrings("byte 0: missing field \"payload\"", diag.message());
 }
 
 test "facade: stringify writes nothing when the conversion fails" {

@@ -19,6 +19,7 @@ const reflect = @import("reflect.zig");
 
 pub const decoder = @import("msgpack/decoder.zig");
 pub const encoder = @import("msgpack/encoder.zig");
+pub const locate = @import("msgpack/locate.zig");
 
 const Io = std.Io;
 const Diagnostics = core.Diagnostics;
@@ -68,9 +69,11 @@ pub fn parse_value(
 }
 
 /// Parses MessagePack into `T`: the item, then `reflect.parse`. A decoding error carries the
-/// byte position the decoder gave; a reflect error (`TypeMismatch`, `MissingField`, ...) keeps
-/// reflect's key-path message at no position. Result slices live until `tree.deinit()` and never
-/// borrow from `input`.
+/// byte position the decoder gave. A reflect error (`TypeMismatch`, `MissingField`, ...) is
+/// re-located: `diag` gets line 1, col = offset + 1 of the item the key path names (a missing or
+/// unknown field names the map) and the message `byte N: ` followed by reflect's key-path
+/// message (ADR 0006 section 8). Result slices live until `tree.deinit()` and never borrow from
+/// `input`.
 /// Preconditions: `tree` was initialized; `1 <= options.depth_max <= nesting_max`.
 pub fn parse(
     comptime T: type,
@@ -82,7 +85,27 @@ pub fn parse(
     assert(options.depth_max >= 1);
     assert(options.depth_max <= core.value.nesting_max);
     const root = try parse_value(tree, input, options, diag);
-    return reflect.parse.parse(T, tree, root, diag);
+    var trace: reflect.Path = undefined;
+    trace.init();
+    return reflect.parse.parse_traced(T, tree, root, diag, &trace) catch |err| {
+        relocate(input, &trace, diag);
+        return err;
+    };
+}
+
+/// Upgrades `diag` from position-less to the byte position of the item `trace` names, keeping
+/// reflect's message after a `byte N: ` prefix. Precondition: `diag` holds a reflect message at
+/// `position_none`.
+fn relocate(input: []const u8, trace: *const reflect.Path, diag: *Diagnostics) void {
+    assert(diag.line == core.diagnostics.position_none);
+    assert(diag.message().len > 0);
+    const offset = locate.locate(input, trace);
+    var buffer: [core.diagnostics.default_limits.message_len_max + 32]u8 = undefined;
+    const text = std.fmt.bufPrint(&buffer, "byte {d}: {s}", .{ offset, diag.message() }) catch
+        diag.message();
+    const located = Diagnostics.init(1, offset + 1, text, null);
+    assert(located.line == 1);
+    diag.* = located;
 }
 
 /// Writes `value` to `w` as one MessagePack item; allocates nothing. See `encoder.write`.
@@ -124,5 +147,6 @@ test {
     _ = @import("msgpack/decoder_test.zig");
     _ = @import("msgpack/tree_test.zig");
     _ = @import("msgpack/encoder.zig");
+    _ = @import("msgpack/locate.zig");
     _ = @import("msgpack/facade_test.zig");
 }
