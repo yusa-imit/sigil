@@ -399,6 +399,8 @@ test "tree: every proper prefix of a document is UnexpectedEnd" {
         const result = decoder.parse_value(&scratch, doc[0..len], options_reject, &diag);
         try expectError(error.UnexpectedEnd, result);
         try expectEqual(@as(u32, 1), diag.line);
+        // The failure is at or before the end of the prefix.
+        try expect(diag.col - 1 <= len);
     }
 }
 
@@ -508,4 +510,51 @@ test "tree: OutOfMemory writes the diagnostic once" {
     try expectError(error.OutOfMemory, result);
     try expectEqual(@as(u32, 1), diag.line);
     try expectEqual(@as(u32, 1), diag.col);
+    try expectEqualStrings("byte 0: out of memory", diag.message());
+}
+
+test "tree: the ext length decides the timestamp form, not the head width" {
+    try expect_stamp("\xc7\x04\xff\x00\x00\x00\x07", 7, 0);
+    try expect_stamp("\xc8\x00\x04\xff\x00\x00\x00\x07", 7, 0);
+}
+
+test "tree: keys are copies and a key repeated three times keeps one slot under last" {
+    var tree: ValueTree = undefined;
+    tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    const input = try std.testing.allocator.dupe(u8, "\x81\xa3key\x01");
+    defer std.testing.allocator.free(input);
+    const map = try parse_ok(&tree, input);
+    @memset(input, 'z');
+    try expectEqualStrings("key", map.map.items()[0].key);
+
+    const triple = "\x84\xa1a\x01\xa1b\x81\xa1a\x02\xa1a\x03\xa1a\x81\xa1a\x04";
+    const nested = try parse_with(&tree, triple, options_last);
+    try expectEqual(@as(u32, 2), nested.map.count);
+    try expectEqual(@as(usize, 4), nested.map.entries.len);
+    try expectEqual(@as(i64, 4), (try field(try field(nested, "a"), "a")).int);
+    try expectEqual(@as(i64, 2), (try field(try field(nested, "b"), "a")).int);
+}
+
+test "tree: depth 128 passes for a mixed array and map chain" {
+    var tree: ValueTree = undefined;
+    tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    const pair = "\x91\x81\xa1k";
+    const doc = pair ** 64 ++ "\xc0";
+    // 64 arrays and 64 maps are 128 levels.
+    var value = try parse_ok(&tree, doc);
+    var levels: u32 = 0;
+    for (0..200) |_| {
+        switch (value) {
+            .array => |items| value = items[0],
+            .map => |map| value = map.items()[0].value,
+            else => break,
+        }
+        levels += 1;
+    }
+    try expectEqual(@as(u32, 128), levels);
+    try expect_fail(doc[0 .. doc.len - 1] ++ "\x90", error.TooDeep, doc.len - 1);
 }
