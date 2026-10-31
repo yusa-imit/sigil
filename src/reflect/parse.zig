@@ -89,6 +89,29 @@ pub fn parse_value(comptime T: type, context: *Context, value: Value) ParseError
     };
 }
 
+/// The parse of a field that `sigil_options.bytes` lists: `U` is `[]const u8` or `?[]const u8`;
+/// `.bytes` is accepted and `.string` is a `TypeMismatch`. The result borrows from `value`.
+/// Precondition: `context.path.count <= context.depth <= nesting_max`.
+pub fn parse_bytes_value(comptime U: type, context: *Context, value: Value) ParseError!U {
+    assert(context.path.count <= context.depth);
+    assert(context.depth <= nesting_max);
+    comptime assert(options.bytes_capable(U));
+    return parse_bytes_kind(U, context, value) catch |err| {
+        if (!context.diag_written) write_fallback(U, context, err);
+        return err;
+    };
+}
+
+fn parse_bytes_kind(comptime U: type, context: *Context, value: Value) ParseError!U {
+    if (@typeInfo(U) == .optional) {
+        if (value == .null) return null;
+    }
+    return switch (value) {
+        .bytes => |data| data,
+        else => mismatch(context, "bytes", value),
+    };
+}
+
 /// Writes `"{path}: parse of {T} failed: {errorName}"` for an error that came back without
 /// `context.diag_written`, so every error return writes the diagnostics exactly once.
 /// Precondition: the diagnostics of `context` are not written yet.
@@ -251,7 +274,10 @@ fn parse_struct(comptime T: type, context: *Context, value: Value) ParseError!T 
     inline for (@typeInfo(T).@"struct".fields, table.entries) |field, entry| {
         if (map.get(entry.wire_name)) |found| {
             const segment: context_mod.Segment = .{ .key = entry.wire_name };
-            @field(result, field.name) = try context.parse_child(field.type, segment, found.*);
+            @field(result, field.name) = if (entry.is_bytes)
+                try context.parse_bytes_child(field.type, segment, found.*)
+            else
+                try context.parse_child(field.type, segment, found.*);
         } else if (field.defaultValue()) |default| {
             @field(result, field.name) = default;
         } else {

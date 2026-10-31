@@ -191,6 +191,48 @@ pub const Context = struct {
         return parse_mod.parse_value(U, context, value);
     }
 
+    /// `parse_child` for a field that `sigil_options.bytes` lists: `U` is `[]const u8` or
+    /// `?[]const u8` and the value must be `.bytes` (or `.null` for the optional).
+    pub fn parse_bytes_child(
+        context: *Context,
+        comptime U: type,
+        segment: Segment,
+        value: Value,
+    ) ParseError!U {
+        assert(context.path.count <= context.depth);
+        assert(context.depth <= nesting_max);
+        if (context.depth >= nesting_max) {
+            const text = "exceeds nesting depth limit {d}";
+            return context.fail(error.TooDeep, text, .{nesting_max});
+        }
+        context.path.push(segment);
+        context.depth += 1;
+        defer context.leave_child();
+
+        return parse_mod.parse_bytes_value(U, context, value);
+    }
+
+    /// `stringify_child` for a field that `sigil_options.bytes` lists: the result is `.bytes`
+    /// (or `.null` for a null optional), copied into the tree.
+    pub fn stringify_bytes_child(
+        context: *Context,
+        comptime U: type,
+        segment: Segment,
+        value: *const U,
+    ) StringifyError!Value {
+        assert(context.path.count <= context.depth);
+        assert(context.depth <= nesting_max);
+        if (context.depth >= nesting_max) {
+            const text = "exceeds nesting depth limit {d}";
+            return context.fail_stringify(error.TooDeep, text, .{nesting_max});
+        }
+        context.path.push(segment);
+        context.depth += 1;
+        defer context.leave_child();
+
+        return stringify_mod.stringify_bytes_value(U, context, value);
+    }
+
     /// Undoes the push and the depth step of `parse_child`.
     fn leave_child(context: *Context) void {
         assert(context.depth > 0);

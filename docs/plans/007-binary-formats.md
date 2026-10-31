@@ -48,7 +48,7 @@ width, tags/ext), so one ADR and one plan cover them.
       each map sized from its header in one arena allocation; the ADR key, duplicate, ext and
       timestamp rules. Tests: depth 128 passes, 129 is `TooDeep`; `maxInt(i64)` and +1;
       timestamp 32/64/96 forms; non-string key at its offset; `check_invariants` on every map.
-- [ ] **`msgpack/encoder.zig` and `msgpack.zig` facade.** Shortest-head writer per ADR (d) and
+- [x] **`msgpack/encoder.zig` and `msgpack.zig` facade.** Shortest-head writer per ADR (d) and
       the ADR (i) surface, replacing the stub `Error = error{NotImplemented}` (ADR 0001);
       result slices doc-commented as tree-owned. Tests: every `Unrepresentable` case, each width
       boundary (127/128, 255/256, 2^16, 2^32), a synod-shaped message struct through

@@ -24,6 +24,9 @@ pub const Entry = struct {
     wire_name: []const u8,
     /// True when the Zig struct field has a default value. Always false for enums and unions.
     has_default: bool,
+    /// True when `sigil_options.bytes` lists the field: it maps to `.bytes`, not `.string`.
+    /// Always false for enums and unions.
+    is_bytes: bool,
 };
 
 /// The resolved options of one type.
@@ -55,12 +58,14 @@ pub fn resolve(comptime T: type) Table {
         check_option_keys(T, options);
         const style = rename_all_of(T, options);
         check_rename_targets(T, options, names);
+        check_bytes_targets(T, options, names);
         var entries: [names.len]Entry = undefined;
         for (names, 0..) |name, index| {
             entries[index] = .{
                 .zig_name = name,
                 .wire_name = wire_name_of(T, options, name, style),
                 .has_default = has_default(T, index),
+                .is_bytes = is_bytes(T, options, name),
             };
         }
         check_unique(T, &entries);
@@ -117,10 +122,11 @@ fn check_option_keys(comptime T: type, comptime options: anytype) void {
     for (info.@"struct".fields) |field| {
         const known = std.mem.eql(u8, field.name, "rename") or
             std.mem.eql(u8, field.name, "rename_all") or
+            std.mem.eql(u8, field.name, "bytes") or
             std.mem.eql(u8, field.name, "deny_unknown_fields");
         if (!known) {
             @compileError(@typeName(T) ++ ".sigil_options: unknown option ." ++ field.name ++
-                " (expected rename, rename_all or deny_unknown_fields)");
+                " (expected rename, rename_all, bytes or deny_unknown_fields)");
         }
     }
 }
@@ -177,6 +183,72 @@ fn check_rename_targets(
                 " is empty");
         }
     }
+}
+
+/// Every element of `.bytes` must be a string literal naming a field of a struct `T` whose type
+/// is `[]const u8` or `?[]const u8`, and no name may repeat.
+fn check_bytes_targets(
+    comptime T: type,
+    comptime options: anytype,
+    comptime names: []const []const u8,
+) void {
+    if (!@hasField(@TypeOf(options), "bytes")) return;
+    if (@typeInfo(T) != .@"struct") {
+        @compileError(@typeName(T) ++ ".sigil_options: bytes applies to structs only");
+    }
+    const list = options.bytes;
+    const info = @typeInfo(@TypeOf(list));
+    if (info != .@"struct" or !info.@"struct".is_tuple) {
+        @compileError(@typeName(T) ++ ".sigil_options: bytes must be a tuple of field names");
+    }
+    for (info.@"struct".fields, 0..) |field, index| {
+        const name = bytes_string(@field(list, field.name));
+        const found = for (names) |candidate| {
+            if (std.mem.eql(u8, candidate, name)) break true;
+        } else false;
+        if (!found) {
+            @compileError(@typeName(T) ++ ".sigil_options: bytes lists ." ++ name ++
+                ", which is not a field of the type");
+        }
+        if (!bytes_capable(@FieldType(T, name))) {
+            @compileError(@typeName(T) ++ ".sigil_options: bytes field ." ++ name ++
+                " must be []const u8 or ?[]const u8");
+        }
+        for (info.@"struct".fields[0..index]) |earlier| {
+            if (std.mem.eql(u8, bytes_string(@field(list, earlier.name)), name)) {
+                @compileError(@typeName(T) ++ ".sigil_options: bytes lists ." ++ name ++
+                    " twice");
+            }
+        }
+    }
+}
+
+fn bytes_string(comptime value: anytype) []const u8 {
+    const info = @typeInfo(@TypeOf(value));
+    const is_string = info == .pointer and info.pointer.size == .one and
+        @typeInfo(info.pointer.child) == .array and
+        @typeInfo(info.pointer.child).array.child == u8;
+    if (!is_string) @compileError("sigil_options: bytes entries must be string literals");
+    return value;
+}
+
+/// True for the two field types `sigil_options.bytes` accepts.
+pub fn bytes_capable(comptime T: type) bool {
+    const plain = T == []const u8;
+    const optional = T == ?[]const u8;
+    assert(!(plain and optional));
+    if (optional) assert(@typeInfo(T) == .optional);
+    return plain or optional;
+}
+
+/// True when `.bytes` of `options` lists the Zig field `name`.
+fn is_bytes(comptime T: type, comptime options: anytype, comptime name: []const u8) bool {
+    if (@typeInfo(T) != .@"struct") return false;
+    if (!@hasField(@TypeOf(options), "bytes")) return false;
+    inline for (@typeInfo(@TypeOf(options.bytes)).@"struct".fields) |field| {
+        if (std.mem.eql(u8, bytes_string(@field(options.bytes, field.name)), name)) return true;
+    }
+    return false;
 }
 
 fn rename_string(comptime value: anytype) []const u8 {
@@ -357,6 +429,34 @@ test "resolve: a struct without fields resolves to an empty table" {
     const table = comptime resolve(Empty);
     try std.testing.expectEqual(@as(usize, 0), table.entries.len);
     try std.testing.expect(table.deny_unknown_fields);
+}
+
+const WithBytes = struct {
+    name: []const u8,
+    payload: []const u8,
+    digest: ?[]const u8,
+    pub const sigil_options = .{ .bytes = .{ "payload", "digest" } };
+};
+
+test "resolve: bytes lists the fields that map to .bytes, nothing else" {
+    const table = comptime resolve(WithBytes);
+    try std.testing.expect(!table.entries[0].is_bytes);
+    try std.testing.expect(table.entries[1].is_bytes);
+    try std.testing.expect(table.entries[2].is_bytes);
+    const plain = comptime resolve(Plain);
+    for (plain.entries) |entry| try std.testing.expect(!entry.is_bytes);
+    // Enums and unions never carry the flag.
+    for ((comptime resolve(Mode)).entries) |entry| try std.testing.expect(!entry.is_bytes);
+    for ((comptime resolve(Shape)).entries) |entry| try std.testing.expect(!entry.is_bytes);
+}
+
+test "bytes_capable: exactly []const u8 and ?[]const u8" {
+    try std.testing.expect(bytes_capable([]const u8));
+    try std.testing.expect(bytes_capable(?[]const u8));
+    try std.testing.expect(!bytes_capable([]u8));
+    try std.testing.expect(!bytes_capable([4]u8));
+    try std.testing.expect(!bytes_capable(?u8));
+    try std.testing.expect(!bytes_capable([]const u16));
 }
 
 test "find_wire: finds by wire name, not by Zig name" {
