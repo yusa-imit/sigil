@@ -12,6 +12,7 @@ pub const value = @import("core/value.zig");
 pub const Value = value.Value;
 pub const Timestamp = value.Timestamp;
 pub const Map = value.Map;
+pub const DuplicateKeyPolicy = value.DuplicateKeyPolicy;
 pub const tree = @import("core/tree.zig");
 pub const ValueTree = tree.ValueTree;
 pub const diagnostics = @import("core/diagnostics.zig");

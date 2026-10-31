@@ -11,6 +11,14 @@ const assert = std.debug.assert;
 /// (REALM.md: "default depth limit 128"), so any tree a parser built fits.
 pub const nesting_max: u32 = 128;
 
+/// What a decoder does when a map repeats a key. The comparison is on decoded key bytes.
+pub const DuplicateKeyPolicy = enum {
+    /// `error.DuplicateKey` at the second key.
+    reject,
+    /// The last value, at the position of the first occurrence (as `JSON.parse`).
+    last,
+};
+
 /// A dynamically typed document node. Plain data: slices point into memory owned by a
 /// `ValueTree` arena (core/tree.zig), never freed individually.
 pub const Value = union(enum) {
