@@ -12,6 +12,13 @@ All notable changes to this project are documented in this file. The format foll
   slice, with every format family, integers normalized to `int` below 2^63, bit-exact float
   widening, strict UTF-8 `str`, borrowed `bin`/`ext` payloads, the ADR 0006 bomb rule and
   `byte N` diagnostics (line 1, col = offset + 1).
+- `sigil.msgpack.decoder.parse_value` (plan 007 item 3): builds a `Value` in one pass on an
+  explicit `[nesting_max]Frame` stack, one arena allocation per container. String-only map keys
+  (`NonStringKey`), `DuplicateKeyPolicy`, ext -1 timestamps in the 32/64/96-bit forms, other ext
+  types `UnsupportedExt`, `TooDeep` at the head that opens level `depth_max + 1`, trailing bytes
+  refused. `ParseValueError` has the 11 variants of ADR 0006.
+- `sigil.core.DuplicateKeyPolicy`: moved from `json` (still re-exported as
+  `sigil.json.DuplicateKeyPolicy`).
 
 ## [0.5.0] - 2026-10-28
 

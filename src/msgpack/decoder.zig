@@ -11,6 +11,18 @@
 //! `f64` bit-exactly, NaN payloads included. A `str` is checked as strict UTF-8 before it is
 //! returned; `bin` and `ext` data are not interpreted.
 //!
+//! `parse_value` builds a `Value` from the same tokens in one pass (ADR 0006 sections 2-5). Open
+//! containers sit on a fixed `[nesting_max]Frame` stack; every count is in the header and has
+//! already passed the bomb rule, so each array and map is one arena allocation of its final size
+//! (at most 32 bytes per input byte for arrays, 24 for maps, plus string and key copies).
+//! Strings, byte strings and keys are copied into the tree. Map keys must be `str`
+//! (`NonStringKey`); a repeated key follows `core.DuplicateKeyPolicy` (`.last` leaves the replaced
+//! subtree in the arena, bounded by the input). Ext type -1 becomes an `instant` timestamp with a
+//! null offset, any other ext is `UnsupportedExt`. Depth counts the root: every array and map is
+//! one level, `depth_max` levels pass and the next is `TooDeep` at its head. Bytes after the one
+//! item are `TrailingBytes`; input that ends inside an open container is `UnexpectedEnd` at the
+//! innermost open container's head. Cost: one scan, O(n^2) key compares per map (`index_of`).
+//!
 //! Bomb rule (ADR 0006 section 5): a declared length or count is compared, in `u64`, with the
 //! bytes left after the head before anything is returned: `len <= left` for `str`/`bin`/`ext`,
 //! `n <= left` for an array, `2 * n <= left` for a map. Failure is `UnexpectedEnd` at the
@@ -27,6 +39,10 @@ const std = @import("std");
 const core = @import("../core.zig");
 const assert = std.debug.assert;
 const Diagnostics = core.Diagnostics;
+const Map = core.Map;
+const Timestamp = core.Timestamp;
+const Value = core.Value;
+const ValueTree = core.ValueTree;
 
 /// One msgpack extension: the signed type byte and its data, borrowed from the input and not
 /// interpreted.
@@ -225,15 +241,22 @@ pub const Reader = struct {
     fn fail(reader: *Reader, diag: *Diagnostics, err: ScanError, start: u32) ScanError {
         assert(start < reader.input.len);
         assert(reader.state == .active);
-        var buffer: [64]u8 = undefined;
-        // proof: the longest message is 10 + 9 + 2 + 24 bytes, well under 64.
-        const message = std.fmt.bufPrint(&buffer, "byte {d}: {s}", .{ start, reason_of(err) }) catch
-            unreachable;
-        diag.* = Diagnostics.init(1, start + 1, message, null);
+        set_diag(diag, start, reason_of(err));
         reader.state = .failed;
         return err;
     }
 };
+
+/// Writes `diag` as line 1, col `offset + 1`, message "byte N: reason".
+fn set_diag(diag: *Diagnostics, offset: u32, reason: []const u8) void {
+    assert(offset < std.math.maxInt(u32));
+    assert(reason.len <= 40);
+    var buffer: [64]u8 = undefined;
+    // proof: the longest message is 6 + 10 + 2 + 40 bytes, well under 64.
+    const message = std.fmt.bufPrint(&buffer, "byte {d}: {s}", .{ offset, reason }) catch
+        unreachable;
+    diag.* = Diagnostics.init(1, offset + 1, message, null);
+}
 
 fn reason_of(err: ScanError) []const u8 {
     // proof: `ScanError` holds no I/O error, so `error.Canceled` cannot occur.
@@ -276,4 +299,295 @@ fn widen_f32(bits: u32) f64 {
     const widened: f64 = @bitCast((sign << 63) | (@as(u64, 0x7ff) << 52) | (payload << 29));
     assert(std.math.isNan(widened));
     return widened;
+}
+
+/// Every field is required: no defaults.
+pub const ParseOptions = struct {
+    /// Containers may nest `depth_max` deep; `1 <= depth_max <= core.value.nesting_max`.
+    depth_max: u16,
+    /// Input longer than this is `error.InputTooLarge`, before any byte is read; at most
+    /// `Reader.input_len_max`.
+    bytes_max: u32,
+    duplicate_key: core.DuplicateKeyPolicy,
+};
+
+/// What building the tree adds to the reader's errors.
+pub const BuildError = error{
+    UnexpectedEnd,
+    TooDeep,
+    NonStringKey,
+    DuplicateKey,
+    UnsupportedExt,
+    InvalidTimestamp,
+    TrailingBytes,
+    OutOfMemory,
+};
+
+/// Every error `parse_value` can return (11 variants, ADR 0006 section 8).
+pub const ParseValueError = ScanError || BuildError || error{InputTooLarge};
+
+comptime {
+    assert(@sizeOf(Value) == 32);
+    assert(@sizeOf(Map.Entry) == 48);
+    assert(@typeInfo(ParseValueError).error_set.?.len == 11);
+}
+
+/// Parses `input`, exactly one MessagePack item, into `tree` and returns its root. The root is
+/// not stored in `tree.root`, so one tree can hold several documents. Strings, byte strings and
+/// keys are copies; the result lives until `tree.deinit()` and `input` may be freed once this
+/// returns. Every error writes `diag` once (`byte N: reason`); success never does.
+/// Preconditions: `tree` was initialized, `1 <= options.depth_max <= nesting_max` and
+/// `options.bytes_max <= Reader.input_len_max`.
+pub fn parse_value(
+    tree: *ValueTree,
+    input: []const u8,
+    options: ParseOptions,
+    diag: *Diagnostics,
+) ParseValueError!Value {
+    assert(options.depth_max >= 1);
+    assert(options.depth_max <= core.value.nesting_max);
+    assert(options.bytes_max <= Reader.input_len_max);
+
+    if (input.len > options.bytes_max) {
+        const none = core.diagnostics.position_none;
+        diag.* = Diagnostics.init(none, none, "input is too large", null);
+        return error.InputTooLarge;
+    }
+    var reader: Reader = undefined;
+    // proof: `input.len <= bytes_max <= input_len_max`, the only way `init` can fail.
+    reader.init(input) catch unreachable;
+    var builder: Builder = .{
+        .tree = tree,
+        .depth_max = options.depth_max,
+        .policy = options.duplicate_key,
+        .frames = @splat(frame_empty),
+        .depth = 0,
+        .root = .null,
+        .done = false,
+    };
+    for (0..input.len + 1) |_| {
+        const token = try reader.next(diag);
+        if (token.item == .end) {
+            assert(!builder.done);
+            return fail_build(diag, builder.head_open(), error.UnexpectedEnd);
+        }
+        builder.accept(token) catch |err| return fail_build(diag, token.offset, err);
+        if (!builder.done) continue;
+        assert(builder.depth == 0);
+        if (reader.offset < input.len) return fail_build(diag, reader.offset, error.TrailingBytes);
+        return builder.root;
+    }
+    unreachable; // proof: every token but `.end` consumes a byte, so `.end` ends the loop.
+}
+
+/// Writes `diag` for a tree-building failure at `offset` and returns `err`.
+fn fail_build(diag: *Diagnostics, offset: u32, err: BuildError) BuildError {
+    assert(offset <= Reader.input_len_max);
+    // proof: `BuildError` holds no I/O error, so `error.Canceled` cannot occur.
+    const reason = switch (err) {
+        error.UnexpectedEnd => "unexpected end of input",
+        error.TooDeep => "nesting is too deep",
+        error.NonStringKey => "map key is not a str",
+        error.DuplicateKey => "duplicate map key",
+        error.UnsupportedExt => "unsupported extension type",
+        error.InvalidTimestamp => "invalid timestamp extension",
+        error.TrailingBytes => "trailing bytes after the item",
+        error.OutOfMemory => "out of memory",
+    };
+    set_diag(diag, offset, reason);
+    return err;
+}
+
+/// One open container.
+const Frame = struct {
+    /// Offset of the container's head byte.
+    head: u32,
+    is_map: bool,
+    array: []Value,
+    map: Map,
+    /// Elements (array) or entries (map) still to be stored; the container closes at zero.
+    left: u32,
+    /// Elements written to `array`.
+    fill: u32,
+    /// The key of the entry being built, once seen.
+    key: []const u8,
+    /// Where `key` already lives in `map`, under `.last`.
+    slot: ?u32,
+    /// A key was read and its value is next.
+    key_pending: bool,
+
+    /// Stores the finished child: an array element, or the value of the pending key.
+    fn store(frame: *Frame, value: Value) void {
+        assert(frame.left > 0);
+        if (frame.is_map) {
+            assert(frame.key_pending);
+            if (frame.slot) |slot| {
+                assert(slot < frame.map.count);
+                frame.map.entries[slot].value = value;
+            } else {
+                // proof: `take_key` found the key absent and the map holds one slot per entry.
+                frame.map.put(frame.key, value) catch unreachable;
+            }
+            frame.key_pending = false;
+            frame.slot = null;
+        } else {
+            assert(frame.fill < frame.array.len);
+            frame.array[frame.fill] = value;
+            frame.fill += 1;
+        }
+        frame.left -= 1;
+    }
+
+    /// The finished container as a `Value`.
+    fn finished(frame: *const Frame) Value {
+        assert(frame.left == 0);
+        assert(!frame.key_pending);
+        if (frame.is_map) {
+            assert(frame.map.count <= frame.map.entries.len);
+            return .{ .map = frame.map };
+        }
+        assert(frame.fill == frame.array.len);
+        return .{ .array = frame.array };
+    }
+};
+
+const frame_empty: Frame = .{
+    .head = 0,
+    .is_map = false,
+    .array = &.{},
+    .map = .{ .entries = &.{}, .count = 0 },
+    .left = 0,
+    .fill = 0,
+    .key = "",
+    .slot = null,
+    .key_pending = false,
+};
+
+/// The tree build: open containers and the finished root.
+const Builder = struct {
+    tree: *ValueTree,
+    depth_max: u32,
+    policy: core.DuplicateKeyPolicy,
+    frames: [core.value.nesting_max]Frame,
+    depth: u32,
+    root: Value,
+    done: bool,
+
+    /// Where an input that ends now is incomplete: the innermost open container's head, or 0.
+    fn head_open(builder: *const Builder) u32 {
+        assert(builder.depth <= builder.frames.len);
+        if (builder.depth == 0) return 0;
+        return builder.frames[builder.depth - 1].head;
+    }
+
+    fn accept(builder: *Builder, token: Token) BuildError!void {
+        assert(builder.depth <= builder.frames.len);
+        assert(!builder.done);
+        if (builder.depth > 0) {
+            const top = &builder.frames[builder.depth - 1];
+            if (top.is_map and !top.key_pending) return builder.take_key(token);
+        }
+        switch (token.item) {
+            .nil => builder.finish(.null),
+            .bool => |flag| builder.finish(.{ .bool = flag }),
+            .int => |number| builder.finish(.{ .int = number }),
+            .uint => |number| builder.finish(.{ .uint = number }),
+            .float => |number| builder.finish(.{ .float = number }),
+            .str => |text| builder.finish(try builder.tree.dupe_string(text)),
+            .bin => |data| builder.finish(try builder.tree.dupe_bytes(data)),
+            .ext => |extension| builder.finish(try timestamp_of(extension)),
+            .array => |count| try builder.open(token.offset, false, count),
+            .map => |count| try builder.open(token.offset, true, count),
+            .end => unreachable, // proof: `parse_value` returns on `.end` before accepting it.
+        }
+    }
+
+    /// Records the key of the next entry. Under `.reject` a repeated key fails here.
+    fn take_key(builder: *Builder, token: Token) BuildError!void {
+        assert(builder.depth > 0);
+        const frame = &builder.frames[builder.depth - 1];
+        assert(frame.is_map);
+        assert(!frame.key_pending);
+        const text = switch (token.item) {
+            .str => |text| text,
+            else => return error.NonStringKey,
+        };
+        const slot = frame.map.index_of(text);
+        if (slot) |found| {
+            if (builder.policy == .reject) return error.DuplicateKey;
+            frame.key = frame.map.entries[found].key;
+        } else {
+            frame.key = try builder.tree.dupe_key(text);
+        }
+        frame.slot = slot;
+        frame.key_pending = true;
+    }
+
+    /// Pushes a container of `count` children, or finishes it at once when `count` is zero.
+    fn open(builder: *Builder, head: u32, is_map: bool, count: u32) BuildError!void {
+        assert(builder.depth <= builder.depth_max);
+        if (builder.depth == builder.depth_max) return error.TooDeep;
+        var frame = frame_empty;
+        frame.head = head;
+        frame.is_map = is_map;
+        frame.left = count;
+        if (is_map) {
+            frame.map = try builder.tree.new_map(count);
+        } else {
+            frame.array = try builder.tree.arena.allocator().alloc(Value, count);
+        }
+        if (count == 0) return builder.finish(frame.finished());
+        builder.frames[builder.depth] = frame;
+        builder.depth += 1;
+    }
+
+    /// Attaches a finished value to its parent, closing every parent that becomes full.
+    fn finish(builder: *Builder, value: Value) void {
+        var current = value;
+        for (0..builder.frames.len + 1) |_| {
+            if (builder.depth == 0) {
+                builder.root = current;
+                builder.done = true;
+                return;
+            }
+            const frame = &builder.frames[builder.depth - 1];
+            frame.store(current);
+            if (frame.left > 0) return;
+            current = frame.finished();
+            builder.depth -= 1;
+        }
+        unreachable; // proof: each pass pops one of at most `frames.len` frames.
+    }
+};
+
+/// ADR 0006 section 4: ext type -1 in its 4, 8 and 12 byte forms is an `instant` with a null
+/// offset; every other type is `UnsupportedExt`, every other length `InvalidTimestamp`.
+fn timestamp_of(extension: Ext) error{ UnsupportedExt, InvalidTimestamp }!Value {
+    if (extension.type != -1) return error.UnsupportedExt;
+    const data = extension.data;
+    const nanoseconds_max = 999_999_999;
+    var seconds: i64 = 0;
+    var nanoseconds: u64 = 0;
+    switch (data.len) {
+        4 => seconds = std.mem.readInt(u32, data[0..4], .big),
+        8 => {
+            const bits = std.mem.readInt(u64, data[0..8], .big);
+            nanoseconds = bits >> 34;
+            seconds = @intCast(bits & ((@as(u64, 1) << 34) - 1));
+        },
+        12 => {
+            nanoseconds = std.mem.readInt(u32, data[0..4], .big);
+            seconds = std.mem.readInt(i64, data[4..12], .big);
+        },
+        else => return error.InvalidTimestamp,
+    }
+    if (nanoseconds > nanoseconds_max) return error.InvalidTimestamp;
+    const stamp: Timestamp = .{
+        .kind = .instant,
+        .seconds = seconds,
+        .nanoseconds = @intCast(nanoseconds),
+        .offset_minutes = null,
+    };
+    stamp.check_invariants();
+    return .{ .timestamp = stamp };
 }

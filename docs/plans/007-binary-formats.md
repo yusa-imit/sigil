@@ -44,7 +44,7 @@ width, tags/ext), so one ADR and one plan cover them.
       declared lengths checked against the remainder. Tests: one case per first byte
       0x00-0xff incl. reserved 0xc1 (typed error at its offset), truncation at every byte of a
       sample, `0xdd ffffffff` with 5 bytes left refused with 0 bytes allocated.
-- [ ] **`msgpack/decoder.zig`: tree.** Containers on an explicit `[nesting_max]Frame` stack,
+- [x] **`msgpack/decoder.zig`: tree.** Containers on an explicit `[nesting_max]Frame` stack,
       each map sized from its header in one arena allocation; the ADR key, duplicate, ext and
       timestamp rules. Tests: depth 128 passes, 129 is `TooDeep`; `maxInt(i64)` and +1;
       timestamp 32/64/96 forms; non-string key at its offset; `check_invariants` on every map.

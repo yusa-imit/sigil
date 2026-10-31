@@ -31,13 +31,8 @@ const Token = scanner.Token;
 const Value = core.Value;
 const ValueTree = core.ValueTree;
 
-/// What to do when an object repeats a key. The comparison is on decoded key bytes.
-pub const DuplicateKeyPolicy = enum {
-    /// `error.DuplicateKey` at the second key.
-    reject,
-    /// The last value, at the position of the first occurrence (as `JSON.parse`).
-    last,
-};
+/// What to do when an object repeats a key (ADR 0006 section 1 moved it to `core`).
+pub const DuplicateKeyPolicy = core.DuplicateKeyPolicy;
 
 /// Every field is required: no defaults.
 pub const ParseOptions = struct {

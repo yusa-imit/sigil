@@ -22,4 +22,5 @@ test "msgpack: module compiles" {
 
 test {
     _ = @import("msgpack/decoder_test.zig");
+    _ = @import("msgpack/tree_test.zig");
 }
