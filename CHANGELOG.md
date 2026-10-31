@@ -17,6 +17,13 @@ All notable changes to this project are documented in this file. The format foll
   (`NonStringKey`), `DuplicateKeyPolicy`, ext -1 timestamps in the 32/64/96-bit forms, other ext
   types `UnsupportedExt`, `TooDeep` at the head that opens level `depth_max + 1`, trailing bytes
   refused. `ParseValueError` has the 11 variants of ADR 0006.
+- `sigil.msgpack.encoder` and the `sigil.msgpack` facade (plan 007 item 4): `parse_value`,
+  `parse(T)`, `write_value` and `stringify(T)`. The writer takes the shortest head for every
+  integer, `float 32` when exact, one quiet NaN (`ca 7fc00000`), `str`/`bin`/array/map heads at
+  the 31/255/65535 boundaries and the `ext -1` timestamp forms; an offset or a local timestamp
+  is `Unrepresentable`. `WriteValueError` has 5 variants. The stub `Error` is replaced.
+- `sigil_options.bytes` (ADR 0006 section 10): a tuple of `[]const u8` / `?[]const u8` field
+  names that map to `.bytes` instead of `.string`. Misuse is a compile error.
 - `sigil.core.DuplicateKeyPolicy`: moved from `json` (still re-exported as
   `sigil.json.DuplicateKeyPolicy`).
 

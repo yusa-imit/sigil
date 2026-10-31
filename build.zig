@@ -85,8 +85,22 @@ const CompileErrorCase = struct { file: []const u8, message: []const u8 };
 const compile_error_cases = [_]CompileErrorCase{
     .{
         .file = "unknown_option",
-        .message = "unknown option .renmae (expected rename, rename_all or deny_unknown_fields)",
+        .message = "unknown option .renmae (expected rename, rename_all, bytes or " ++
+            "deny_unknown_fields)",
     },
+    .{
+        .file = "bytes_missing_field",
+        .message = "bytes lists .nmae, which is not a field of the type",
+    },
+    .{
+        .file = "bytes_wrong_type",
+        .message = "bytes field .count must be []const u8 or ?[]const u8",
+    },
+    .{ .file = "bytes_on_enum", .message = "bytes applies to structs only" },
+    .{ .file = "bytes_twice", .message = "bytes lists .name twice" },
+    .{ .file = "bytes_not_tuple", .message = "bytes must be a tuple of field names" },
+    .{ .file = "bytes_not_string", .message = "bytes entries must be string literals" },
+    .{ .file = "bytes_on_union", .message = "bytes applies to structs only" },
     .{
         .file = "rename_missing_field",
         .message = "rename of .nmae, which is not a field or tag of the type",

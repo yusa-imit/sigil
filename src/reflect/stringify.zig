@@ -61,6 +61,34 @@ pub fn stringify_value(
     };
 }
 
+/// The conversion of a field that `sigil_options.bytes` lists: `U` is `[]const u8` or
+/// `?[]const u8`; the result is `.bytes` copied into the tree, or `.null` for a null optional.
+/// No UTF-8 check: the bytes are opaque. Precondition: `context.path.count <= context.depth`.
+pub fn stringify_bytes_value(
+    comptime U: type,
+    context: *Context,
+    value: *const U,
+) StringifyError!Value {
+    assert(context.path.count <= context.depth);
+    assert(context.depth <= nesting_max);
+    comptime assert(options.bytes_capable(U));
+    return stringify_bytes_kind(U, context, value) catch |err| {
+        if (!context.diag_written) write_fallback(U, context, err);
+        return err;
+    };
+}
+
+fn stringify_bytes_kind(
+    comptime U: type,
+    context: *Context,
+    value: *const U,
+) StringifyError!Value {
+    const present: ?[]const u8 = value.*;
+    const data = present orelse return .null;
+    _ = try check_count(context, data.len, "byte string");
+    return context.tree.dupe_bytes(data);
+}
+
 /// Writes `"{path}: stringify of {T} failed: {errorName}"` for an error that came back without
 /// `context.diag_written`, so every error return writes the diagnostics exactly once.
 /// Precondition: the diagnostics of `context` are not written yet.
@@ -201,7 +229,11 @@ fn stringify_struct(comptime T: type, context: *Context, value: *const T) String
     var map = try context.tree.new_map(fields.len);
     inline for (fields, table.entries) |field, entry| {
         const segment: context_mod.Segment = .{ .key = entry.wire_name };
-        const item = try context.stringify_child(field.type, segment, &@field(value.*, field.name));
+        const field_ptr = &@field(value.*, field.name);
+        const item = if (entry.is_bytes)
+            try context.stringify_bytes_child(field.type, segment, field_ptr)
+        else
+            try context.stringify_child(field.type, segment, field_ptr);
         // proof: capacity is the field count and `options.resolve` made the wire names unique.
         map.put(entry.wire_name, item) catch unreachable;
     }

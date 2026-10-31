@@ -533,3 +533,37 @@ test "stringify: every allocation failing in turn is OutOfMemory or the same tex
     }
     return error.NeverSucceeded;
 }
+
+const Blob = struct {
+    data: []const u8,
+    pub const sigil_options = .{ .bytes = .{"data"} };
+};
+
+test "stringify: a field listed in sigil_options.bytes is Unrepresentable as JSON" {
+    var tree: ValueTree = undefined;
+    tree.init(testing.allocator);
+    defer tree.deinit();
+
+    var aw: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer aw.deinit();
+
+    var diag = fresh_diag();
+    const result = json.stringify(Blob, &tree, &aw.writer, .{ .data = "ab" }, minified, &diag);
+    try testing.expectError(error.Unrepresentable, result);
+    try testing.expectEqualStrings("data: bytes cannot be written as JSON", diag.message());
+}
+
+test "parse: a JSON string for a field listed in sigil_options.bytes is a TypeMismatch" {
+    var tree: ValueTree = undefined;
+    tree.init(testing.allocator);
+    defer tree.deinit();
+
+    var diag = fresh_diag();
+    const options: json.ParseOptions = .{
+        .depth_max = 128,
+        .bytes_max = 1 << 20,
+        .duplicate_key = .reject,
+    };
+    const result = json.parse(Blob, &tree, "{\"data\":\"ab\"}", options, &diag);
+    try testing.expectError(error.TypeMismatch, result);
+}
