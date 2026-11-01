@@ -53,7 +53,7 @@ width, tags/ext), so one ADR and one plan cover them.
       result slices doc-commented as tree-owned. Tests: every `Unrepresentable` case, each width
       boundary (127/128, 255/256, 2^16, 2^32), a synod-shaped message struct through
       `stringify` -> `parse`, a type mismatch reported at its offset.
-- [ ] **`cbor/decoder.zig`: reader.** Heads of major types 0-7, additional info 0-27,
+- [x] **`cbor/decoder.zig`: reader.** Heads of major types 0-7, additional info 0-27,
       reserved 28-30 refused, indefinite lengths and `break` per ADR (f), f16, text checked as
       UTF-8. Tests: the RFC 8949 Appendix A items and each Appendix F not-well-formed class,
       every error at its offset.

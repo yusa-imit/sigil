@@ -126,8 +126,8 @@ are `NotWellFormed` (RFC 8949 §3.3).
 ### 5. Limits and the bomb rule (e)
 
 - **Depth.** `depth_max` is 1..`core.value.nesting_max` (128) and counts *levels including the
-  root*: every array, map and tag adds one. A tag around a scalar is a level, so a root tagged
-  scalar needs `depth_max >= 2`. 128 levels pass, 129 are `TooDeep`, pointing at the head that
+  root*: every array, map and tag adds one; a scalar adds none, so a root tagged scalar needs
+  `depth_max >= 1` and an indefinite string (a leaf) opens no level. 128 levels pass, 129 are `TooDeep`, pointing at the head that
   opens level 129. Both readers keep a fixed `[nesting_max]Frame` stack; no recursion.
 - **Input.** `bytes_max` is a `u32` and at most `input_len_max = maxInt(u32) - 1`, so
   `col = offset + 1` cannot overflow; longer input is `InputTooLarge` before any byte is read.
