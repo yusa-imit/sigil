@@ -77,6 +77,7 @@ pub const Item = union(enum) {
     tag: u64,
     /// The break byte `0xff` closing the innermost indefinite item.
     stop,
+    /// The whole input is consumed and nothing is left open; yielded exactly once.
     end,
 };
 
@@ -109,8 +110,11 @@ pub const ScanError = error{
 
 /// Pull reader over one slice; see the module doc. Construct with `init` only.
 pub const Reader = struct {
+    /// The whole document; borrowed, never modified.
     input: []const u8,
+    /// The next byte to read; `input.len` once every item is consumed.
     offset: u32,
+    /// The deepest container and tag nesting allowed, `1..nesting_max`.
     depth_max: u16,
     /// Open frames; `frames[0..depth]` are live.
     depth: u16,
@@ -188,13 +192,20 @@ pub const Reader = struct {
 
     /// The first byte of the innermost open string, container or tag; null at the top level.
     fn open_head(reader: *const Reader) ?u32 {
-        if (reader.string != .none) return reader.string_head;
+        if (reader.string != .none) {
+            assert(reader.string_head < reader.input.len);
+            return reader.string_head;
+        }
         if (reader.depth == 0) return null;
-        return reader.frames[reader.depth - 1].head;
+        const head = reader.frames[reader.depth - 1].head;
+        assert(head < reader.input.len);
+        return head;
     }
 
     /// Reads the item whose first byte `byte` is at `start` (not yet consumed) and advances.
     fn read_item(reader: *Reader, byte: u8, start: u32) ScanError!Item {
+        assert(reader.input[start] == byte);
+        assert(reader.offset == start);
         reader.offset += 1;
         const major = byte >> 5;
         const info: u8 = byte & 0x1f;
@@ -246,6 +257,7 @@ pub const Reader = struct {
 
     /// Major type 0: the ADR 0006 section 2 normal form of a non-negative integer.
     fn unsigned(reader: *Reader, info: u8) ScanError!Item {
+        assert(reader.string == .none);
         const value = try reader.argument(info);
         if (value > std.math.maxInt(i64)) return reader.complete(.{ .uint = value });
         return reader.complete(.{ .int = @intCast(value) });
@@ -323,13 +335,17 @@ pub const Reader = struct {
 
     /// Major type 6: the tag number; the tagged item is the next token.
     fn tag(reader: *Reader, info: u8, start: u32) ScanError!Item {
+        assert(reader.string == .none);
         const number = try reader.argument(info);
         try reader.push(start, .tag, 0);
+        assert(reader.frames[reader.depth - 1].kind == .tag);
         return .{ .tag = number };
     }
 
     /// Major type 7: simple values, floats and the break code.
     fn simple(reader: *Reader, info: u8) ScanError!Item {
+        assert(info <= 0x1f);
+        assert(reader.string == .none);
         const item: Item = switch (info) {
             20 => .{ .bool = false },
             21 => .{ .bool = true },
@@ -360,7 +376,11 @@ pub const Reader = struct {
             .indef_array => {},
             .indef_map => if (frame.left != 0) return error.InvalidIndefinite,
         }
+        assert(frame.kind == .indef_array or frame.kind == .indef_map);
+        const depth_before = reader.depth;
         reader.depth -= 1;
+        defer assert(reader.depth < depth_before);
+
         return reader.complete(.stop);
     }
 
@@ -413,7 +433,7 @@ fn set_diag(diag: *Diagnostics, offset: u32, reason: []const u8) void {
     assert(offset < std.math.maxInt(u32));
     assert(reason.len <= 40);
     var buffer: [64]u8 = undefined;
-    // proof: the longest message is 6 + 10 + 2 + 40 bytes, well under 64.
+    // proof: the longest message is 5 + 10 + 2 + 40 bytes, well under 64.
     const message = std.fmt.bufPrint(&buffer, "byte {d}: {s}", .{ offset, reason }) catch
         unreachable;
     diag.* = Diagnostics.init(1, offset + 1, message, null);

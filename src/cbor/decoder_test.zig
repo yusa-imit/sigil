@@ -336,6 +336,13 @@ test "appendix F: break placement" {
     try expect_scan_error(error.UnexpectedBreak, 1, "\xc1\xff");
     try expect_scan_error(error.UnexpectedBreak, 2, "\x9f\xff\xff");
     try expect_scan_error(error.UnexpectedBreak, 1, "\x01\xff");
+    try expect_scan_error(error.UnexpectedBreak, 2, "\x9f\x81\xff");
+    try expect_scan_error(error.UnexpectedBreak, 2, "\x9f\xc1\xff");
+    try expect_scan_error(error.UnexpectedBreak, 3, "\xa2\x00\x00\xff\x00");
+    try expect_items("\xbf\x61a\x9f\xff\xff", &.{
+        .map_indef, text("a"), .array_indef, .stop, .stop,
+    });
+    try expect_scan_error(error.InvalidIndefinite, 4, "\xbf\x01\xbf\x01\xff\xff");
     // A break after a map key leaves the pair incomplete.
     try expect_scan_error(error.InvalidIndefinite, 2, "\xbf\x01\xff");
     try expect_scan_error(error.InvalidIndefinite, 4, "\xbf\x01\x02\x03\xff");
@@ -351,6 +358,12 @@ test "appendix F: indefinite string chunks" {
     try expect_scan_error(error.InvalidIndefinite, 1, "\x5f\x9f\xff\xff");
     try expect_scan_error(error.InvalidIndefinite, 1, "\x5f\xf6\xff");
     try expect_scan_error(error.InvalidIndefinite, 3, "\x7f\x61a\x01\xff");
+    try expect_scan_error(error.NotWellFormed, 1, "\x5f\x5c");
+    try expect_scan_error(error.InvalidIndefinite, 1, "\x5f\xf8\x00");
+    // A truncated chunk is reported at the chunk; complete chunks then EOF at the string head.
+    try expect_scan_error(error.UnexpectedEnd, 1, "\x5f\x42\x01");
+    try expect_scan_error(error.UnexpectedEnd, 2, "\x82\x01\x7f\x61a");
+    try expect_scan_error(error.UnexpectedEnd, 1, "\x9f\x5f");
 }
 
 test "text is strict UTF-8, each indefinite chunk on its own" {
@@ -422,6 +435,7 @@ test "reader: the empty input is .end and the offset is the input length" {
 
 test "reader: init refuses input longer than input_len_max" {
     var reader: Reader = undefined;
+    // `init` reads only `input.len`, so a slice over unmapped memory is safe here.
     const fake: []const u8 = @as([*]const u8, @ptrFromInt(8))[0 .. Reader.input_len_max + 1];
     try expectError(error.InputTooLarge, reader.init(fake, depth_default));
     const edge: []const u8 = @as([*]const u8, @ptrFromInt(8))[0..Reader.input_len_max];
