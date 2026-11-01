@@ -26,6 +26,11 @@ All notable changes to this project are documented in this file. The format foll
   names that map to `.bytes` instead of `.string`. Misuse is a compile error.
 - `sigil.core.DuplicateKeyPolicy`: moved from `json` (still re-exported as
   `sigil.json.DuplicateKeyPolicy`).
+- `sigil.cbor.decoder.Reader` (plan 007 item 5): a pull reader for CBOR heads (RFC 8949 majors
+  0-7, indefinite lengths with `stop`, half/single/double floats widened exactly, per-chunk
+  strict UTF-8), a bounded frame stack that decides break placement, indefinite string chunks and
+  `TooDeep`, the ADR 0006 bomb rule, and `byte N` diagnostics. ADR 0006 section 5 clarified: a
+  scalar adds no depth level.
 
 ## [0.5.0] - 2026-10-28
 
