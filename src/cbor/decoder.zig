@@ -429,7 +429,7 @@ pub const Reader = struct {
 };
 
 /// Writes `diag` as line 1, col `offset + 1`, message "byte N: reason".
-fn set_diag(diag: *Diagnostics, offset: u32, reason: []const u8) void {
+pub fn set_diag(diag: *Diagnostics, offset: u32, reason: []const u8) void {
     assert(offset < std.math.maxInt(u32));
     assert(reason.len <= 40);
     var buffer: [64]u8 = undefined;
@@ -484,3 +484,11 @@ fn widen_f32(bits: u32) f64 {
     assert(std.math.isNan(widened));
     return widened;
 }
+
+const tree = @import("tree.zig");
+
+/// The tree build over this reader; see `cbor/tree.zig`.
+pub const parse_value = tree.parse_value;
+pub const ParseOptions = tree.ParseOptions;
+pub const BuildError = tree.BuildError;
+pub const ParseValueError = tree.ParseValueError;
