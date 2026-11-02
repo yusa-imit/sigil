@@ -596,3 +596,55 @@ test "tree: an allocation failure at every point is OutOfMemory and frees everyt
         }
     } else return error.TestSweepTooShort;
 }
+
+test "tree: a tag over a container, a nested tag or an indefinite item is refused at the tag" {
+    try expect_fail("\xc0\x80", error.InvalidTimestamp, 0);
+    try expect_fail("\xc1\xa0", error.InvalidTimestamp, 0);
+    try expect_fail("\xc0\xc0\x60", error.InvalidTimestamp, 0);
+    try expect_fail("\xc1\x9f\xff", error.InvalidTimestamp, 0);
+    try expect_fail("\xc2\x7f\x61a\xff", error.InvalidTag, 0);
+    try expect_fail("\xc3\xbf\xff", error.InvalidTag, 0);
+}
+
+test "tree: a simple value in key position is NonStringKey" {
+    try expect_fail("\xa1\xf7\x01", error.NonStringKey, 1);
+}
+
+test "tree: a tag's content is validated even when the tag is unsupported" {
+    try expect_fail("\xc4\x62\xc3\x28", error.InvalidUtf8, 1);
+}
+
+test "tree: under last an indefinite text key overwrites an earlier definite key" {
+    var tree: ValueTree = undefined;
+    tree.init(std.testing.allocator);
+    defer tree.deinit();
+
+    const map = try parse_with(&tree, "\xbf\x61a\x01\x7f\x61a\xff\x02\xff", options_last);
+    try expectEqual(@as(u32, 1), map.map.count);
+    try expectEqual(@as(i64, 2), (try field(map, "a")).int);
+}
+
+test "tree: a tiny negative float for tag 1 floors to the previous second" {
+    const stamp = try tree_mod.timestamp_from_float(-1.0e-9);
+    try expectEqual(@as(i64, -1), stamp.seconds);
+    try expectEqual(@as(u32, 999_999_999), stamp.nanoseconds);
+    const tiny = try tree_mod.timestamp_from_float(-1.0e-300);
+    try expectEqual(@as(i64, 0), tiny.seconds);
+    try expectEqual(@as(u32, 0), tiny.nanoseconds);
+}
+
+test "tree: the 17 variants are exactly the ADR 0006 section 8 set" {
+    const expected = [_][]const u8{
+        "InputTooLarge",     "UnexpectedEnd",   "NotWellFormed",     "UnexpectedBreak",
+        "InvalidIndefinite", "InvalidUtf8",     "TooDeep",           "NonStringKey",
+        "DuplicateKey",      "UnsupportedTag",  "UnsupportedSimple", "InvalidTimestamp",
+        "InvalidTag",        "IntegerAboveMax", "IntegerBelowMin",   "TrailingBytes",
+        "OutOfMemory",
+    };
+    const variants = @typeInfo(ParseValueError).error_set.?;
+    for (expected) |name| {
+        var found = false;
+        for (variants) |variant| found = found or std.mem.eql(u8, variant.name, name);
+        try expect(found);
+    }
+}

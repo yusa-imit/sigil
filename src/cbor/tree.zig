@@ -7,7 +7,8 @@
 //! length; those are the only sizes the wire does not state up front. Pass 2 (building) then
 //! allocates each array, map and string once at its final size from the tree arena, so no
 //! container grows. The counts array holds at most one `u32` per byte of `5f 7f 9f bf` in the
-//! input, so it is bounded by four times the input size; the unused tail stays in the arena.
+//! input, so it is bounded by four times the input size; it is allocated first (before pass 1
+//! has checked any declared size) and shrunk to the used part once pass 1 is done.
 //!
 //! Open containers sit on a fixed `[nesting_max]Frame` stack. Map keys must be text, definite or
 //! indefinite (`NonStringKey`); a repeated key follows `core.DuplicateKeyPolicy`. Tags 0-3 are
@@ -95,6 +96,8 @@ pub fn parse_value(
         return fail_build(diag, 0, error.OutOfMemory);
     const used = try count_pass(input, options.depth_max, counts, diag);
     assert(used <= counts.len);
+    // Shrinks in place when `counts` is still the newest arena block; otherwise the tail stays.
+    _ = tree.arena.allocator().resize(counts, used); // Either outcome is correct.
     return build_pass(tree, input, options, counts[0..used], diag);
 }
 
@@ -466,6 +469,7 @@ const Builder = struct {
     /// Records the key of the next entry. Under `.reject` a repeated key fails here.
     fn set_key(builder: *Builder, text: []const u8) BuildError!void {
         assert(builder.key_due());
+        assert(builder.pending == null);
         const frame = &builder.frames[builder.depth - 1];
         const slot = frame.map.index_of(text);
         if (slot) |found| {
@@ -476,6 +480,7 @@ const Builder = struct {
         }
         frame.slot = slot;
         frame.key_pending = true;
+        assert(!builder.key_due());
     }
 
     /// Starts an indefinite string whose payload length is the next pass 1 count.
@@ -490,6 +495,7 @@ const Builder = struct {
             .is_text = is_text,
             .as_key = as_key,
         };
+        assert(builder.string.?.fill == 0);
     }
 
     /// Inside an indefinite string: a chunk is copied, `stop` ends the string.
@@ -521,20 +527,25 @@ const Builder = struct {
 
     /// A tag head; its content is the next item. Tags nest only to fail (content errors).
     fn begin_tag(builder: *Builder, number: u64, head: u32) BuildError!void {
+        assert(builder.string == null);
         if (builder.pending) |outer| return builder.refuse_content(outer);
         if (number > 3) return error.UnsupportedTag;
         builder.pending = .{ .number = @intCast(number), .head = head };
+        assert(builder.pending != null);
     }
 
     /// A tag whose content is not a leaf of its kind: reported at the tag's head.
     fn refuse_content(builder: *Builder, tag: Pending) BuildError {
         assert(tag.number <= 3);
+        assert(builder.blame == null);
         builder.blame = tag.head;
         return if (tag.number <= 1) error.InvalidTimestamp else error.InvalidTag;
     }
 
     /// Attaches a finished leaf, converted first when a tag waits for it.
     fn leaf(builder: *Builder, value: Value) BuildError!void {
+        assert(builder.string == null);
+        defer assert(builder.pending == null);
         const tag = builder.pending orelse return builder.finish(value);
         builder.pending = null;
         builder.blame = tag.head;
@@ -574,6 +585,8 @@ const Builder = struct {
 
     /// Attaches a finished value to its parent, closing every definite parent that becomes full.
     fn finish(builder: *Builder, value: Value) void {
+        assert(builder.pending == null);
+        assert(!builder.done);
         var current = value;
         for (0..builder.frames.len + 1) |_| {
             if (builder.depth == 0) {

@@ -15,7 +15,7 @@
 //! same major type (`InvalidIndefinite`), and that input does not end inside an open container,
 //! tag or string (`UnexpectedEnd` at the innermost open head). Each text chunk is strict UTF-8 on
 //! its own. A completed root item resets the stack, so a second item may follow; the tree build
-//! (a later item) owns the `TrailingBytes` rule.
+//! (`tree.zig`, re-exported at the end of this file) owns the `TrailingBytes` rule.
 //!
 //! Integers are normalized as in ADR 0006 section 2: a non-negative value that an `i64` holds is
 //! `.int` whatever its head width, `.uint` appears only above `maxInt(i64)`, and a negative
