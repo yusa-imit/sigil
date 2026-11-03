@@ -113,17 +113,21 @@ fn chunks_equal(reader: *Reader, name: []const u8, diag: *Diagnostics) ?bool {
     return null;
 }
 
-/// Consumes one whole item: it is done when the reader is back at the nesting depth it had
-/// before the item and no indefinite string is open. Null when the input ends first.
+/// Consumes one whole item: it is done when the reader is back at, or above, the nesting depth
+/// it had before the item (finishing the last member of a container also finishes the
+/// container) and no indefinite string is open. Null when no item is left in the enclosing
+/// container, or the input ends first.
 fn skip_item(reader: *Reader, diag: *Diagnostics) ?void {
     const base = reader.depth;
+    var first = true;
     // Each token consumes at least one byte, so the loop ends within `input.len + 1` tokens.
     for (0..@as(u64, reader.input.len) + 1) |_| {
         const token = reader.next(diag) catch return null;
+        // A `stop` or the end as the first token means the enclosing container had no item left.
+        if (first and (token.item == .stop or token.item == .end)) return null;
+        first = false;
         if (token.item == .end) return null;
-        // A `stop` below the starting depth closes the enclosing container: no item was left.
-        if (token.item == .stop and reader.depth < base) return null;
-        if (reader.depth == base and reader.string == .none) return;
+        if (reader.depth <= base and reader.string == .none) return;
     }
     return null;
 }

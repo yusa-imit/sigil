@@ -215,7 +215,8 @@ container's head; `TrailingBytes` the first extra byte; `UnexpectedEnd` the head
 could not be completed). The message names the byte offset in decimal and the reason, so a
 reader sees `byte 17` where JSON sees `2:4`. Reflect failures (`TypeMismatch`, `MissingField`)
 are re-located the way `json.parse` does it (ADR-0003 §8): `reader.locate(input, options, path)`
-walks the item starting offsets along the path and, on a miss, falls back to 1:1.
+walks the item starting offsets along the path and, on a miss, stops at the deepest item it
+reached (the enclosing map for a missing field; offset 0 when the input has no readable root).
 
 ### 9. CBOR indefinite lengths and the build (f)
 

@@ -277,6 +277,7 @@ test "encoder: timestamps are tag 1 with an integer, a float, or tag 0 with text
     try expect_hex(instant(1363896240, 0, null), "c11a514b67b0");
     try expect_hex(instant(-1, 0, null), "c120");
     try expect_hex(instant(1363896240, 500_000_000, null), "c1fb41d452d9ec200000");
+    try expect_hex(instant(-2, 500_000_000, null), "c1f9be00");
     try expect_hex(instant(1363896240, 0, 0), "c074323031332d30332d32315432303a30343a30305a");
     const plus_one = "c07819" ++ "323031332d30332d32315432313a30343a30302b30313a3030";
     try expect_hex(instant(1363896240, 0, 60), plus_one);
@@ -317,6 +318,24 @@ test "encoder: a timestamp is a nesting level, as the decoder counts a tag" {
     try encoder.write(&sink.writer, instant(0, 0, null), one_level, &diag);
 }
 
+test "encoder: a failure deep in a sorted map names the sorted key, not the insertion index" {
+    var inner_entries: [2]Map.Entry = undefined;
+    const bad = Value{ .string = "\xff" };
+    const inner = try map_of(&inner_entries, &.{ "zz", "a" }, &.{ .null, bad });
+    const list = [_]Value{ .null, inner };
+    var entries: [2]Map.Entry = undefined;
+    const outer = try map_of(&entries, &.{ "list", "b" }, &.{ .{ .array = &list }, .null });
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+
+    var diag = fresh_diag();
+    const result = encoder.write(&aw.writer, outer, sorted, &diag);
+    try std.testing.expectError(error.InvalidUtf8, result);
+    try expectEqualStrings("list[1].a: string is not valid UTF-8", diag.message());
+    // "b" sorts before "list", so it was written first; the prefix ends inside the failing map.
+    try expect(std.mem.startsWith(u8, aw.written(), "\xa2\x61b\xf6\x64list"));
+}
+
 test "encoder: invalid UTF-8 in a value or a key is InvalidUtf8 and writes nothing for it" {
     var entries: [1]Map.Entry = undefined;
     const bad_value = try map_of(&entries, &.{"k"}, &.{.{ .string = "\xff" }});
@@ -339,7 +358,8 @@ test "encoder: a string past maxInt(u32) is InputTooLarge, a byte string is not 
     const length_max: usize = std.math.maxInt(u32);
     const oversized = @as([*]const u8, &backing)[0 .. length_max + 1];
     try expect_fail(.{ .string = oversized }, 128, error.InputTooLarge, "string is too large");
-    // CBOR carries 64-bit lengths, so a byte string of any length has a head.
+    // CBOR carries 64-bit lengths, so a byte string of any length has a head. `Discarding`
+    // never reads the payload, which is why the one-byte backing array is enough.
     var sink: std.Io.Writer.Discarding = .init(&.{});
     var diag = fresh_diag();
     try encoder.write(&sink.writer, .{ .bytes = oversized }, plain, &diag);
@@ -347,19 +367,19 @@ test "encoder: a string past maxInt(u32) is InputTooLarge, a byte string is not 
 }
 
 test "encoder: depth_max levels pass and one more is TooDeep, at 1 and at 128" {
-    const arena = std.testing.allocator;
-    var nodes = try arena.alloc(Value, 130);
-    defer arena.free(nodes);
+    const gpa = std.testing.allocator;
+    var nodes = try gpa.alloc(Value, 130);
+    defer gpa.free(nodes);
 
     nodes[0] = .null;
     for (1..nodes.len) |index| nodes[index] = .{ .array = nodes[index - 1 .. index] };
     // nodes[k] holds k array levels around a null.
     const bytes = try encode(nodes[128], plain);
-    defer arena.free(bytes);
+    defer gpa.free(bytes);
 
     try expectEqual(@as(usize, 129), bytes.len);
     try expect_fail(nodes[2], 1, error.TooDeep, "[0]: exceeds the depth limit");
-    var aw: std.Io.Writer.Allocating = .init(arena);
+    var aw: std.Io.Writer.Allocating = .init(gpa);
     defer aw.deinit();
 
     var diag = fresh_diag();
