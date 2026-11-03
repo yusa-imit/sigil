@@ -1,0 +1,8 @@
+Vendored from https://github.com/kawanet/msgpack-test-suite, commit
+e04f6edeaae589c768d6b70fcce80aa786b7800e. MIT license (see LICENSE), Copyright (c) 2017-2018
+Yusuke Kawasaki; unmodified.
+File: msgpack-test-suite.json is the upstream dist/msgpack-test-suite.json, which upstream builds
+from its src/*.yaml (15 files: 85 cases, 233 encodings). The runner reads that JSON with std.json
+(ADR 0006 section 10, the JSON fallback), so nothing under src/msgpack/ imports json/ or a YAML
+reader.
+Run by src/msgpack/vectors_test.zig, which reads the file at run time from the repo root.

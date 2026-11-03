@@ -1,0 +1,9 @@
+appendix_a.json is a transcription of the examples of RFC 8949 Appendix A (identical to RFC 7049
+Appendix A), taken from the machine-readable list in https://github.com/cbor/test-vectors,
+commit aba89b653e484bc8573c22f3ff35641d79dfd8c1. That repository carries no license file, so the
+upstream file is not copied: this file keeps only the RFC example data (hex, decoded value or
+diagnostic notation, roundtrip flag) in this repo own layout, 82 entries, no base64 column.
+Each entry: "hex" the CBOR item, "roundtrip" whether a generic encoder re-encodes it identically,
+and either "decoded" (the JSON form of the value) or "diagnostic" (CBOR diagnostic notation,
+for items JSON cannot hold).
+Run by src/cbor/vectors_test.zig, which reads the file at run time from the repo root.
