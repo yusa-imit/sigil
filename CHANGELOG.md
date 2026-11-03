@@ -40,6 +40,15 @@ All notable changes to this project are documented in this file. The format foll
   to 64 significant bits (`IntegerAboveMax`, `IntegerBelowMin`), other tags `UnsupportedTag`,
   other simple values `UnsupportedSimple`, a tag is a depth level. `ParseValueError` has the 17
   variants of ADR 0006.
+- `sigil.cbor.encoder` and the `sigil.cbor` facade (plan 007 item 7): `parse_value`, `parse(T)`,
+  `write_value` and `stringify(T)`. The writer uses preferred serialization: the shortest head
+  for every integer, the shortest of f16/f32/f64 that keeps the value bit for bit, one quiet
+  NaN (`f9 7e00`), definite lengths only. `StringifyOptions.deterministic` sorts map keys
+  shorter-first then bytewise (RFC 8949 4.2.1); the sorted bytes are a wire surface. A timestamp
+  is tag 0 text when it has an offset, else tag 1 with an integer or an exact f64; a local kind,
+  a year outside 0000-9999 and an inexact fraction are `Unrepresentable`. Reflect errors are
+  located by `cbor/locate.zig` (`byte N`, indefinite items and tags included). The stub `Error`
+  is replaced; `WriteValueError` has 5 variants.
 
 ## [0.5.0] - 2026-10-28
 

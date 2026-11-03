@@ -60,7 +60,7 @@ width, tags/ext), so one ADR and one plan cover them.
 - [x] **`cbor/decoder.zig`: tree and tags.** The item 3 frame-stack build for CBOR plus tags
       0-3 and simple values per ADR (c). Tests: tag 0 at offsets +-23:59, tag 1 int and float,
       bignum 2^64-1 accepted and 2^64 refused, `-2^64` refused, 129 nested tags `TooDeep`.
-- [ ] **`cbor/encoder.zig` and `cbor.zig` facade.** Preferred serialization, the ADR (g)
+- [x] **`cbor/encoder.zig` and `cbor.zig` facade.** Preferred serialization, the ADR (g)
       deterministic option, the item 4 surface. Tests: Appendix A encodings byte-equal; two
       insertion orders of one map give identical deterministic bytes; shortest floats keep the
       value (f16 `1.5`, f32 `100000.0`, f64 `1.1`); one NaN encoding.
