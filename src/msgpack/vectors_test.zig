@@ -58,14 +58,13 @@ const kind_keys = [_][]const u8{
     "nil", "bool", "binary", "number", "string", "array", "map", "timestamp", "ext",
 };
 
-fn kind_of(case: std.json.ObjectMap) Kind {
+fn kind_of(case: std.json.ObjectMap) error{UnknownCaseKind}!Kind {
     for (kind_keys, 0..) |key, index| {
         if (case.get(key) != null) return @enumFromInt(index);
     }
     // A case that names only a `bignum` is a number whose JSON form would lose digits.
     if (case.get("bignum") != null) return .number;
-    // proof: the vendored file gives every case one type key; the case counts pin it.
-    unreachable;
+    return error.UnknownCaseKind;
 }
 
 /// `bytes` of the dash-separated hex text, in `buffer`.
@@ -150,7 +149,7 @@ fn encoded_in_set(gpa: std.mem.Allocator, root: Value, encodings: []const std.js
 /// Judges every encoding of one case; `report` logs each unexpected outcome (an error-level log
 /// fails a test).
 fn judge(gpa: std.mem.Allocator, case: std.json.ObjectMap, tally: *Tally, report: bool) !void {
-    const kind = kind_of(case);
+    const kind = try kind_of(case);
     const encodings = case.get("msgpack").?.array.items;
     tally.cases += 1;
     var first_root: ?Value = null;
@@ -176,7 +175,7 @@ fn judge(gpa: std.mem.Allocator, case: std.json.ObjectMap, tally: *Tally, report
             if (report) std.log.err("vectors: {s} decodes to the wrong value", .{encoding.string});
         } else |err| {
             const pinned = kind == .ext and std.mem.eql(u8, @errorName(err), "UnsupportedExt");
-            if (pinned and diag.line == 1 and diag.col >= 1) {
+            if (pinned and diag.line == 1 and diag.col == 1) {
                 tally.unsupported += 1;
                 continue;
             }
@@ -237,7 +236,7 @@ test "vectors: the msgpack-test-suite cases have the pinned verdict counts" {
     try expectEqual(tally.encoder_checked, tally.encoder_in_set);
 }
 
-test "vectors: the runner rejects every wrong expectation" {
+test "vectors: the runner counts wrong values, unpinned refusals and unlisted re-encodings" {
     const gpa = std.testing.allocator;
     const wrong_value = try run_suite(gpa, "{\"f\":[{\"number\":2,\"msgpack\":[\"01\"]}]}", false);
     try expectEqual(@as(u32, 1), wrong_value.unexpected);
@@ -251,6 +250,11 @@ test "vectors: the runner rejects every wrong expectation" {
     const reserved = try run_suite(gpa, "{\"f\":[{\"nil\":null,\"msgpack\":[\"c1\"]}]}", false);
     try expectEqual(@as(u32, 1), reserved.unexpected);
     try expectEqual(@as(u32, 0), reserved.unsupported);
+
+    const fixext = "{\"f\":[{\"ext\":[1,\"10\"],\"msgpack\":[\"d4-01-10\"]}]}";
+    const ext = try run_suite(gpa, fixext, false);
+    try expectEqual(@as(u32, 1), ext.unsupported);
+    try expectEqual(@as(u32, 0), ext.unexpected);
 
     const as_float = "{\"f\":[{\"number\":1,\"msgpack\":[\"ca-3f-80-00-00\"]}]}";
     const float_form = try run_suite(gpa, as_float, false);

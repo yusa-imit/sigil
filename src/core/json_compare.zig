@@ -19,6 +19,9 @@ const Value = core.Value;
 /// Pairs awaiting comparison; the vendored vectors are far shallower than this.
 pub const pending_max: u32 = 256;
 
+/// Pairs compared in total before `matches` gives up with false.
+pub const pairs_max: u32 = 4096;
+
 const Pair = struct { want: *const std.json.Value, got: *const Value };
 
 /// True when `got` is the value `want` describes. Returns false, never asserts, on any
@@ -28,9 +31,7 @@ pub fn matches(want: *const std.json.Value, got: *const Value) bool {
     comptime assert(pending_max > 0);
     var len: u32 = 1;
     pending[0] = .{ .want = want, .got = got };
-    // The bound counts pushes: each pair is popped once, so total work is at most
-    // `pending_max` pairs even when the stack never grows past a few.
-    for (0..pending_max * 16) |_| {
+    for (0..pairs_max) |_| {
         if (len == 0) return true;
         len -= 1;
         const pair = pending[len];
@@ -123,6 +124,32 @@ test "json_compare: an integer beyond i64 equals a uint of the same digits" {
     try expect(try probe("18446744073709551615", .{ .uint = max }));
     try expect(!try probe("18446744073709551614", .{ .uint = max }));
     try expect(!try probe("18446744073709551615", .{ .int = -1 }));
+}
+
+test "json_compare: floats compare by bits, nesting works, limits end in false" {
+    try expect(!try probe("0.0", .{ .float = -0.0 }));
+    try expect(try probe("-0.0", .{ .float = -0.0 }));
+    try expect(!try probe("18446744073709551615", .{ .int = 5 }));
+    try expect(!try probe("1", .{ .timestamp = .{
+        .kind = .instant,
+        .seconds = 1,
+        .nanoseconds = 0,
+        .offset_minutes = null,
+    } }));
+
+    var inner: [1]core.value.Map.Entry = undefined;
+    var inner_map = core.value.Map.init(&inner);
+    try inner_map.put("k", .{ .bool = true });
+    const items = [_]Value{ .{ .map = inner_map }, .null };
+    var outer: [1]core.value.Map.Entry = undefined;
+    var outer_map = core.value.Map.init(&outer);
+    try outer_map.put("list", .{ .array = &items });
+    try expect(try probe("{\"list\":[{\"k\":true},null]}", .{ .map = outer_map }));
+    try expect(!try probe("{\"list\":[{\"k\":false},null]}", .{ .map = outer_map }));
+
+    const wide = [_]Value{.null} ** (pending_max + 1);
+    const text = "[" ++ "null," ** pending_max ++ "null]";
+    try expect(!try probe(text, .{ .array = &wide }));
 }
 
 test "json_compare: arrays and maps compare by shape and content" {

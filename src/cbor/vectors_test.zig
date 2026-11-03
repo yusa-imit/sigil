@@ -43,24 +43,77 @@ const write_options: cbor.StringifyOptions = .{
 };
 
 /// An item the decoder refuses on purpose: its hex, the error it returns, and why.
-const Pin = struct { hex: []const u8, error_name: []const u8, reason: []const u8 };
+/// `col` is the 1-based column (byte offset + 1) the diagnostics must name; `reason` cites the
+/// ADR 0006 section (s3, s4) or RFC clause behind the refusal.
+const Pin = struct { hex: []const u8, error_name: []const u8, col: u32, reason: []const u8 };
 
 const pinned_unsupported = [_]Pin{
-    .{ .hex = "c249010000000000000000", .error_name = "IntegerAboveMax", .reason = "2^64" },
-    .{ .hex = "3bffffffffffffffff", .error_name = "IntegerBelowMin", .reason = "-2^64" },
-    .{ .hex = "c349010000000000000000", .error_name = "IntegerBelowMin", .reason = "-2^64-1" },
-    .{ .hex = "f7", .error_name = "UnsupportedSimple", .reason = "undefined, ADR 0006 s4" },
-    .{ .hex = "f0", .error_name = "UnsupportedSimple", .reason = "simple(16), ADR 0006 s4" },
-    .{ .hex = "f818", .error_name = "NotWellFormed", .reason = "simple(24), RFC 8949 3.3" },
-    .{ .hex = "f8ff", .error_name = "UnsupportedSimple", .reason = "simple(255), ADR 0006 s4" },
-    .{ .hex = "d74401020304", .error_name = "UnsupportedTag", .reason = "tag 23, ADR 0006 s4" },
-    .{ .hex = "d818456449455446", .error_name = "UnsupportedTag", .reason = "tag 24, s4" },
+    .{
+        .hex = "c249010000000000000000",
+        .error_name = "IntegerAboveMax",
+        .col = 1,
+        .reason = "2^64",
+    },
+    .{
+        .hex = "3bffffffffffffffff",
+        .error_name = "IntegerBelowMin",
+        .col = 1,
+        .reason = "-2^64",
+    },
+    .{
+        .hex = "c349010000000000000000",
+        .error_name = "IntegerBelowMin",
+        .col = 1,
+        .reason = "-2^64-1",
+    },
+    .{
+        .hex = "f7",
+        .error_name = "UnsupportedSimple",
+        .col = 1,
+        .reason = "undefined, s4",
+    },
+    .{
+        .hex = "f0",
+        .error_name = "UnsupportedSimple",
+        .col = 1,
+        .reason = "simple(16), s4",
+    },
+    .{
+        .hex = "f818",
+        .error_name = "NotWellFormed",
+        .col = 1,
+        .reason = "simple(24), RFC 8949 3.3",
+    },
+    .{
+        .hex = "f8ff",
+        .error_name = "UnsupportedSimple",
+        .col = 1,
+        .reason = "simple(255), s4",
+    },
+    .{
+        .hex = "d74401020304",
+        .error_name = "UnsupportedTag",
+        .col = 1,
+        .reason = "tag 23, s4",
+    },
+    .{
+        .hex = "d818456449455446",
+        .error_name = "UnsupportedTag",
+        .col = 1,
+        .reason = "tag 24, s4",
+    },
     .{
         .hex = "d82076687474703a2f2f7777772e6578616d706c652e636f6d",
         .error_name = "UnsupportedTag",
-        .reason = "tag 32, ADR 0006 s4",
+        .col = 1,
+        .reason = "tag 32, s4",
     },
-    .{ .hex = "a201020304", .error_name = "NonStringKey", .reason = "integer keys, ADR 0006 s3" },
+    .{
+        .hex = "a201020304",
+        .error_name = "NonStringKey",
+        .col = 2,
+        .reason = "integer keys, s3",
+    },
 };
 
 const Tally = struct {
@@ -173,12 +226,12 @@ fn judge(gpa: std.mem.Allocator, item: std.json.ObjectMap, tally: *Tally, report
             return;
         };
         const named = std.mem.eql(u8, pin.error_name, @errorName(err));
-        if (named and diag.line == 1 and diag.col >= 1) {
+        if (named and diag.line == 1 and diag.col == pin.col) {
             tally.unsupported += 1;
         } else {
             tally.unexpected += 1;
-            if (report) std.log.err("vectors: {s} pinned {s}, got {s}", .{
-                hex, pin.error_name, @errorName(err),
+            if (report) std.log.err("vectors: {s} ({s}) pinned {s} at col {d}, got {s} at {d}", .{
+                hex, pin.reason, pin.error_name, pin.col, @errorName(err), diag.col,
             });
         }
         return;
@@ -258,7 +311,7 @@ test "vectors: the RFC 8949 Appendix A items have the pinned verdict counts" {
     try expectEqual(tally.roundtrip_checked, tally.roundtrip_identical);
 }
 
-test "vectors: the runner rejects every wrong expectation" {
+test "vectors: the runner counts wrong values, unpinned refusals and wide re-encodings" {
     const gpa = std.testing.allocator;
     const wrong = try run_suite(gpa, "[{\"hex\":\"01\",\"roundtrip\":true,\"decoded\":2}]", false);
     try expectEqual(@as(u32, 1), wrong.unexpected);
