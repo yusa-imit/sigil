@@ -57,7 +57,7 @@ width, tags/ext), so one ADR and one plan cover them.
       reserved 28-30 refused, indefinite lengths and `break` per ADR (f), f16, text checked as
       UTF-8. Tests: the RFC 8949 Appendix A items and each Appendix F not-well-formed class,
       every error at its offset.
-- [ ] **`cbor/decoder.zig`: tree and tags.** The item 3 frame-stack build for CBOR plus tags
+- [x] **`cbor/decoder.zig`: tree and tags.** The item 3 frame-stack build for CBOR plus tags
       0-3 and simple values per ADR (c). Tests: tag 0 at offsets +-23:59, tag 1 int and float,
       bignum 2^64-1 accepted and 2^64 refused, `-2^64` refused, 129 nested tags `TooDeep`.
 - [ ] **`cbor/encoder.zig` and `cbor.zig` facade.** Preferred serialization, the ADR (g)

@@ -102,7 +102,8 @@ Any other length with type -1 is `InvalidTimestamp`. `offset_minutes` is null: t
 an instant, not a zone.
 
 **CBOR tags.** Tags 0-3 only; any other tag is `UnsupportedTag` at the tag's head (the tagged
-content is not decoded).
+content is never built into a value, but pass 1 has already checked it as well-formed, so a
+malformed content reports its own error first).
 
 - Tag 0: content must be a text string, parsed by `core.timestamp.parse`; the result must be
   kind `instant` (a local kind, a bad calendar field or content of another major type is
@@ -227,8 +228,10 @@ them). `cbor.parse_value` is two scans of the same bytes, as ADR-0003 §4:
    open order: the child count (map: pair count) for an array or map, the total payload byte
    length for a string. Every grammar, UTF-8, tag, bomb-rule and depth error is reported here,
    before any node exists. `counts` shrinks in place to the number actually used.
-3. **Pass 2** cannot fail except `OutOfMemory` and the key/time conversion errors (those too
-   are decided in pass 1; pass 2 asserts). Each container is one allocation of its final size
+3. **Pass 2** reports what needs a built value: `OutOfMemory`, `NonStringKey`, `DuplicateKey`,
+   the tag and simple-value errors and the bignum range errors, at the offset of the item
+   concerned (a tag's content error at the tag's head). Grammar errors always come first, from
+   pass 1, so pass 2's reader cannot fail. Each container is one allocation of its final size
    (definite: the header count, checked in pass 1; indefinite: `counts`); every key and string
    is copied once. A document with no indefinite item has `bound = 0` and pays no allocation
    for pass 1, only the second scan; the benchmark (plan item 10) reports the doubled decode work.

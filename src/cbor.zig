@@ -22,4 +22,5 @@ test "cbor: module compiles" {
 
 test {
     _ = @import("cbor/decoder_test.zig");
+    _ = @import("cbor/tree_test.zig");
 }

@@ -15,7 +15,7 @@
 //! same major type (`InvalidIndefinite`), and that input does not end inside an open container,
 //! tag or string (`UnexpectedEnd` at the innermost open head). Each text chunk is strict UTF-8 on
 //! its own. A completed root item resets the stack, so a second item may follow; the tree build
-//! (a later item) owns the `TrailingBytes` rule.
+//! (`tree.zig`, re-exported at the end of this file) owns the `TrailingBytes` rule.
 //!
 //! Integers are normalized as in ADR 0006 section 2: a non-negative value that an `i64` holds is
 //! `.int` whatever its head width, `.uint` appears only above `maxInt(i64)`, and a negative
@@ -429,7 +429,7 @@ pub const Reader = struct {
 };
 
 /// Writes `diag` as line 1, col `offset + 1`, message "byte N: reason".
-fn set_diag(diag: *Diagnostics, offset: u32, reason: []const u8) void {
+pub fn set_diag(diag: *Diagnostics, offset: u32, reason: []const u8) void {
     assert(offset < std.math.maxInt(u32));
     assert(reason.len <= 40);
     var buffer: [64]u8 = undefined;
@@ -484,3 +484,11 @@ fn widen_f32(bits: u32) f64 {
     assert(std.math.isNan(widened));
     return widened;
 }
+
+const tree = @import("tree.zig");
+
+/// The tree build over this reader; see `cbor/tree.zig`.
+pub const parse_value = tree.parse_value;
+pub const ParseOptions = tree.ParseOptions;
+pub const BuildError = tree.BuildError;
+pub const ParseValueError = tree.ParseValueError;

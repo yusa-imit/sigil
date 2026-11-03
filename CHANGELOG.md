@@ -31,6 +31,15 @@ All notable changes to this project are documented in this file. The format foll
   strict UTF-8), a bounded frame stack that decides break placement, indefinite string chunks and
   `TooDeep`, the ADR 0006 bomb rule, and `byte N` diagnostics. ADR 0006 section 5 clarified: a
   scalar adds no depth level.
+- `sigil.cbor.decoder.parse_value` (plan 007 item 6, code in `cbor/tree.zig`): builds a `Value`
+  in two scans of the same bytes, the first validating the grammar and counting every
+  indefinite item, the second allocating each array, map and string once at its final size.
+  Definite and indefinite containers and strings (an indefinite text string is a valid key),
+  string-only keys (`NonStringKey`), `DuplicateKeyPolicy`, tag 0 (`instant`, offset kept), tag 1
+  (integer, or float split into seconds and nanoseconds rounded half to even), tags 2 and 3 up
+  to 64 significant bits (`IntegerAboveMax`, `IntegerBelowMin`), other tags `UnsupportedTag`,
+  other simple values `UnsupportedSimple`, a tag is a depth level. `ParseValueError` has the 17
+  variants of ADR 0006.
 
 ## [0.5.0] - 2026-10-28
 
