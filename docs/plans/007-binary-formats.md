@@ -70,7 +70,7 @@ width, tags/ext), so one ADR and one plan cover them.
       pinned-unsupported counts, never "no crash". Why careful: third-party data; check
       licenses, size, and that `git ls-files` counts every file (`.gitignore` `test_*` hid
       JSONTestSuite in plan 004). Verification: counts printed by the test, in the CHANGELOG.
-- [ ] **Round-trip property, mutation and fuzz.** Seeded generators of representable `Value`
+- [x] **Round-trip property, mutation and fuzz.** Seeded generators of representable `Value`
       trees per format (depth and width bounded): encode -> decode -> `eql` over 1,000 seeds
       after the ADR (a) normalization, second encode byte-identical. Seeded byte mutation of the
       vectors plus a `std.testing.fuzz` entry per format (0.16 `Smith` API): a tree that passes

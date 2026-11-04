@@ -57,6 +57,13 @@ All notable changes to this project are documented in this file. The format foll
   `undefined` and simple values, tags 23/24/32, integer map keys), 54 of 54 `roundtrip` items
   re-encode byte for byte. Expectations are decoded with `std.json` through
   `core/json_compare.zig`, so no format module imports `json/`.
+- Round-trip property, mutation and fuzz for both binary formats (plan 007 item 9), sharing the
+  test-only harness `core/binary_property.zig`: 1,000 seeded normal-form trees (every kind, the
+  head-size boundaries, ext/tag timestamps) go encode -> decode -> `eql` -> encode byte for byte
+  (CBOR also under `deterministic`); 3,464 msgpack and 2,256 CBOR seeded mutations of the
+  vectors and of generated encodings are accepted with a fixed-point re-encoding and an arena
+  under 96 bytes per input byte, or rejected with a position; one `std.testing.fuzz` entry per
+  format with pinned seed verdicts.
 
 ## [0.5.0] - 2026-10-28
 
