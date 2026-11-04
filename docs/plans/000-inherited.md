@@ -69,7 +69,12 @@
 | 2026-10-28 | TOML 파싱 (DOM, 100 KB 생성 문서) | 약 225 MB/s, 약 0.44 ms | < 1 ms (PRD §5) | `toml.parse_value`, arena 4.73 B/입력 B |
 | 2026-10-28 | TOML 파싱 (reflect → struct) | 약 210 MB/s, 약 0.48 ms | < 1 ms (PRD §5) | `toml.parse(T)`, arena 8.53 B/입력 B |
 | 2026-10-28 | TOML 직렬화 | 약 590 MB/s, 약 0.17 ms | 미정 | `toml.write_value`, 출력 바이트 기준 |
+| 2026-11-05 | MessagePack 디코딩 (DOM, 약 740 KB) | 약 303 MB/s | 미정 | `msgpack.decode`, arena 8.44 B/입력 B |
+| 2026-11-05 | MessagePack 인코딩 | 약 591 MB/s | > 1 GB/s (PRD §5) | `msgpack.encode`, 출력 바이트 기준, 목표 미달 |
+| 2026-11-05 | CBOR 디코딩 (DOM, 약 730 KB) | 약 144 MB/s | 미정 | `cbor.decode`, arena 8.53 B/입력 B |
+| 2026-11-05 | CBOR 인코딩 | 약 537 MB/s | 미정 | `cbor.encode`, 출력 바이트 기준, 키 삽입 순서 |
 
 측정 조건: Apple Silicon 로컬, `zig build bench` (ReleaseFast), 시드 고정 약 1 MiB 생성 문서(twitter.json
 아님), 16회 반복, 워밍업 1회 제외, 수 회 실행 중 근사 중앙값. 첫 벤치는 실행 순서에 따라 최대 약 20% 흔들린다. 목표 미달은 plan 004의
-범위 밖이며(측정만 수행), 튜닝은 별도 plan에서 다룬다. TOML 행은 시드 고정 약 100 KB `[[records]]` 문서에 256회 반복.
+범위 밖이며(측정만 수행), 튜닝은 별도 plan에서 다룬다. TOML 행은 시드 고정 약 100 KB `[[records]]` 문서에 256회 반복. msgpack/CBOR 행은 같은 JSON 문서의 트리를 각 형식으로
+인코딩한 입력(약 740/730 KB)에 16회 반복. 인코딩 MB/s는 출력 바이트 기준.

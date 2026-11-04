@@ -9,6 +9,7 @@ const std = @import("std");
 const sigil = @import("sigil");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const binary = @import("binary.zig");
 
 /// The generated document is at least this long.
 const document_bytes_min: u32 = 1 << 20;
@@ -45,18 +46,10 @@ const Record = struct {
 
 const Document = struct { records: []const Record };
 
-/// What one benchmark measured: bytes it pushed through the format code across all iterations,
-/// the time that took, the arena capacity one iteration needed (0 when it has no arena), and,
-/// for the `path` benchmarks, how many nodes they resolved or selected across all iterations
-/// (0 for the format benchmarks, which print no ns per match).
-const Result = struct {
-    bytes_total: u64,
-    elapsed_ns: u64,
-    arena_bytes: u64,
-    matches_total: u64 = 0,
-};
+/// What one benchmark measured (see `binary.Result`).
+const Result = binary.Result;
 
-const BenchError = error{ OutOfMemory, BenchFailed };
+const BenchError = binary.BenchError;
 
 /// Pointer lookups per iteration of `path.pointer.resolve`; each parses its own pointer text.
 const pointer_lookups: u32 = 1 << 16;
@@ -68,8 +61,9 @@ const query_descendants = "$..*";
 
 const query_filter = "$.records[?@.active == true && @.score >= 50.0].id";
 
-/// Which generated document a benchmark reads: the JSON one or the TOML one.
-const Format = enum { json, toml };
+/// Which generated document a benchmark reads: the JSON one, the TOML one, or the JSON one
+/// re-encoded as MessagePack or CBOR.
+const Format = enum { json, toml, msgpack, cbor };
 
 /// The TOML document is at least this long (PRD section 5 targets a ~100 KB parse).
 const toml_bytes_min: u32 = 100_000;
@@ -83,6 +77,23 @@ const toml_parse_options: sigil.toml.ParseOptions = .{
 };
 
 const toml_stringify_options: sigil.toml.StringifyOptions = .{ .depth_max = 64 };
+
+/// One generated input per `Format`; every slice is owned by the caller that built it.
+const Inputs = struct {
+    json: []const u8,
+    toml: []const u8,
+    msgpack: []const u8,
+    cbor: []const u8,
+
+    fn get(inputs: Inputs, format: Format) []const u8 {
+        return switch (format) {
+            .json => inputs.json,
+            .toml => inputs.toml,
+            .msgpack => inputs.msgpack,
+            .cbor => inputs.cbor,
+        };
+    }
+};
 
 const Bench = struct {
     name: []const u8,
@@ -100,6 +111,10 @@ const benches = [_]Bench{
     .{ .name = "toml.parse_value", .format = .toml, .run = bench_toml_parse },
     .{ .name = "toml.parse(T)", .format = .toml, .run = bench_toml_parse_typed },
     .{ .name = "toml.write_value", .format = .toml, .run = bench_toml_write },
+    .{ .name = "msgpack.decode", .format = .msgpack, .run = binary.msgpack_decode },
+    .{ .name = "msgpack.encode", .format = .msgpack, .run = binary.msgpack_encode },
+    .{ .name = "cbor.decode", .format = .cbor, .run = binary.cbor_decode },
+    .{ .name = "cbor.encode", .format = .cbor, .run = binary.cbor_encode },
 };
 
 pub fn main(init: std.process.Init) !void {
@@ -117,6 +132,22 @@ pub fn main(init: std.process.Init) !void {
 
     assert(toml_document.len >= toml_bytes_min);
 
+    const msgpack_document = try binary.msgpack_input(init.gpa, document);
+    defer init.gpa.free(msgpack_document);
+
+    const cbor_document = try binary.cbor_input(init.gpa, document);
+    defer init.gpa.free(cbor_document);
+
+    assert(msgpack_document.len >= binary.input_bytes_min);
+    assert(cbor_document.len >= binary.input_bytes_min);
+
+    const inputs: Inputs = .{
+        .json = document,
+        .toml = toml_document,
+        .msgpack = msgpack_document,
+        .cbor = cbor_document,
+    };
+
     var stdout_buffer: [1024]u8 = undefined;
     var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
     const out = &stdout_writer.interface;
@@ -125,14 +156,14 @@ pub fn main(init: std.process.Init) !void {
         document.len, document_seed, iterations,
     });
     try out.print("toml document: {d} bytes (seed {d})\n", .{ toml_document.len, toml_seed });
+    try out.print("msgpack input: {d} bytes, cbor input: {d} bytes (the json tree)\n", .{
+        msgpack_document.len, cbor_document.len,
+    });
     for (benches) |bench| {
         if (filter) |needle| {
             if (std.mem.find(u8, bench.name, needle) == null) continue;
         }
-        const input = switch (bench.format) {
-            .json => document,
-            .toml => toml_document,
-        };
+        const input = inputs.get(bench.format);
         const result = try bench.run(init.gpa, init.io, input);
         try out.print("{s:<24} {d:>9.1} MB/s {d:>7.2} arena bytes/input byte", .{
             bench.name,
@@ -649,18 +680,28 @@ test "bench: each benchmark measures bytes and time over the generated document"
     const toml_document = try generate_toml_document(std.testing.allocator, toml_seed);
     defer std.testing.allocator.free(toml_document);
 
+    const msgpack_document = try binary.msgpack_input(std.testing.allocator, document);
+    defer std.testing.allocator.free(msgpack_document);
+
+    const cbor_document = try binary.cbor_input(std.testing.allocator, document);
+    defer std.testing.allocator.free(cbor_document);
+
+    const inputs: Inputs = .{
+        .json = document,
+        .toml = toml_document,
+        .msgpack = msgpack_document,
+        .cbor = cbor_document,
+    };
     for (benches) |bench| {
-        const input = switch (bench.format) {
-            .json => document,
-            .toml => toml_document,
-        };
+        const input = inputs.get(bench.format);
         const result = try bench.run(std.testing.allocator, std.testing.io, input);
         const is_path = std.mem.startsWith(u8, bench.name, "path.");
         const is_pointer = std.mem.eql(u8, bench.name, "path.pointer.resolve");
         try std.testing.expectEqual(!is_pointer, result.bytes_total > 0);
         try std.testing.expect(result.elapsed_ns > 0);
         const is_write = std.mem.eql(u8, bench.name, "json.write.minified") or
-            std.mem.eql(u8, bench.name, "toml.write_value");
+            std.mem.eql(u8, bench.name, "toml.write_value") or
+            std.mem.endsWith(u8, bench.name, ".encode");
         try std.testing.expectEqual(!is_write and !is_path, result.arena_bytes > 0);
         try std.testing.expectEqual(is_path, result.matches_total > 0);
     }
@@ -721,4 +762,8 @@ test "bench: the pointer and query benchmarks match what the document holds" {
         @as(u64, pointer_lookups),
         try pointer_pass(&root, @intCast(all)),
     );
+}
+
+test {
+    _ = binary; // Runs the binary-format benchmark tests.
 }

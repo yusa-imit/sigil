@@ -76,7 +76,7 @@ width, tags/ext), so one ADR and one plan cover them.
       vectors plus a `std.testing.fuzz` entry per format (0.16 `Smith` API): a tree that passes
       `check_invariants` or a typed error with an offset, never a panic, arena bytes linear in
       input bytes. Verification: `zig build test`; seed counts asserted.
-- [ ] **Benchmarks.** `zig build bench` adds msgpack and CBOR decode and encode over one seeded
+- [x] **Benchmarks.** `zig build bench` adds msgpack and CBOR decode and encode over one seeded
       ~1 MB record tree (PRD section 5: msgpack encode > 1 GB/s); MB/s and arena bytes per input
       byte recorded in `docs/plans/000-inherited.md`. Measure only; tuning is its own plan.
 - [ ] **Release v0.6.0.** Tick 4A and 4B in `000-inherited.md`, CHANGELOG `[0.6.0]`,

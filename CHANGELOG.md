@@ -8,6 +8,10 @@ All notable changes to this project are documented in this file. The format foll
 
 ### Added
 
+- `zig build bench` measures msgpack and CBOR decode and encode (plan 007 item 10) over the
+  seeded record tree re-encoded per format (`bench/binary.zig`): msgpack decode ~303 MB/s, encode
+  ~591 MB/s (PRD target > 1 GB/s not met, tuning is a later plan), CBOR decode ~144 MB/s, encode
+  ~537 MB/s.
 - `sigil.msgpack.decoder.Reader` (plan 007 item 2): a pull reader for MessagePack heads over one
   slice, with every format family, integers normalized to `int` below 2^63, bit-exact float
   widening, strict UTF-8 `str`, borrowed `bin`/`ext` payloads, the ADR 0006 bomb rule and
