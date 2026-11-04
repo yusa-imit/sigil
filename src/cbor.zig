@@ -149,4 +149,5 @@ test {
     _ = @import("cbor/encoder.zig");
     _ = @import("cbor/locate.zig");
     _ = @import("cbor/facade_test.zig");
+    _ = @import("cbor/vectors_test.zig");
 }

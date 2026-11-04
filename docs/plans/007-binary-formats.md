@@ -64,7 +64,7 @@ width, tags/ext), so one ADR and one plan cover them.
       deterministic option, the item 4 surface. Tests: Appendix A encodings byte-equal; two
       insertion orders of one map give identical deterministic bytes; shortest floats keep the
       value (f16 `1.5`, f32 `100000.0`, f64 `1.1`); one NaN encoding.
-- [ ] **Official test vectors.** Vendor small subsets of msgpack-test-suite and the RFC 8949
+- [x] **Official test vectors.** Vendor small subsets of msgpack-test-suite and the RFC 8949
       Appendix A vectors, each with its license and a `SOURCE` file, as `tests/toml-test/`
       was; run them from `zig build test` through the ADR (j) runners; assert pass, reject and
       pinned-unsupported counts, never "no crash". Why careful: third-party data; check

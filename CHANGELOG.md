@@ -49,6 +49,14 @@ All notable changes to this project are documented in this file. The format foll
   a year outside 0000-9999 and an inexact fraction are `Unrepresentable`. Reflect errors are
   located by `cbor/locate.zig` (`byte N`, indefinite items and tags included). The stub `Error`
   is replaced; `WriteValueError` has 5 variants.
+- Official vectors for both binary formats (plan 007 item 8, ADR 0006 section 10), test-only:
+  `tests/msgpack-test-suite/` (MIT, upstream `dist` JSON, commit e04f6ed): 15 files, 85 cases,
+  233 encodings, 222 decode to the named value, 11 pinned unsupported (ext types other than -1,
+  `UnsupportedExt`), 78 of 78 re-encodings are one of the listed encodings. `tests/cbor/`: the 82
+  items of RFC 8949 Appendix A: 71 accepted, 11 pinned unsupported (2^64, -2^64 and -2^64-1,
+  `undefined` and simple values, tags 23/24/32, integer map keys), 54 of 54 `roundtrip` items
+  re-encode byte for byte. Expectations are decoded with `std.json` through
+  `core/json_compare.zig`, so no format module imports `json/`.
 
 ## [0.5.0] - 2026-10-28
 

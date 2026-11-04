@@ -149,4 +149,5 @@ test {
     _ = @import("msgpack/encoder.zig");
     _ = @import("msgpack/locate.zig");
     _ = @import("msgpack/facade_test.zig");
+    _ = @import("msgpack/vectors_test.zig");
 }

@@ -289,8 +289,12 @@ No option has a default.
   expected line of each file with a line reader local to the test. Item 8 checks the licences
   and the file shapes at vendoring; if the upstream shape is too irregular for a line reader,
   the fallback is a hand-derived `tests/msgpack/vectors.json` whose `SOURCE` file maps each case
-  to its upstream file. Either way the suite asserts counts (cases, pass, reject,
-  pinned-unsupported with a reason string each, never a skip) and prints them once per run.
+  to its upstream file. Item 8 took the fallback in its upstream form: the file is the
+  suite's own `dist/msgpack-test-suite.json`, built by upstream from the YAML, read with
+  `std.json`. The CBOR working group's `test-vectors` repo has no license file, so
+  `tests/cbor/appendix_a.json` keeps only the RFC example data in this repo's layout. Either
+  way the suite asserts counts (cases, pass, reject, pinned-unsupported with a reason string
+  each, never a skip) and prints them once per run.
 
 ## Consequences
 
