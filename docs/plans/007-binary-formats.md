@@ -79,7 +79,7 @@ width, tags/ext), so one ADR and one plan cover them.
 - [x] **Benchmarks.** `zig build bench` adds msgpack and CBOR decode and encode over one seeded
       ~1 MB record tree (PRD section 5: msgpack encode > 1 GB/s); MB/s and arena bytes per input
       byte recorded in `docs/plans/000-inherited.md`. Measure only; tuning is its own plan.
-- [ ] **Release v0.6.0.** Tick 4A and 4B in `000-inherited.md`, CHANGELOG `[0.6.0]`,
+- [x] **Release v0.6.0.** Tick 4A and 4B in `000-inherited.md`, CHANGELOG `[0.6.0]`,
       `build.zig.zon` and `sigil.version` 0.5.0 -> 0.6.0 in one PR, then tag and
       `gh release create`. Verification: `gh release view v0.6.0` succeeds.
 
