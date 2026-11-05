@@ -35,8 +35,8 @@
 
 ## Phase 4 — Binary Formats
 
-- [ ] 4A `msgpack/`
-- [ ] 4B `cbor/`
+- [x] 4A `msgpack/`
+- [x] 4B `cbor/`
 - [ ] 4C `proto/`
 - [ ] 4D `csv/`
 
