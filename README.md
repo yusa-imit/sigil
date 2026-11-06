@@ -10,16 +10,17 @@ sigil은 하나의 `Value` 중간 표현과 comptime 리플렉션(struct ↔ Val
 
 ---
 
-## Status: `core`, `reflect`, `json` and `path` are implemented; other formats are stubs
+## Status: `core`, `reflect`, `json`, `path`, `toml`, `msgpack` and `cbor` are implemented
 
-`sigil.core`, `sigil.reflect`, `sigil.json` and `sigil.path` are implemented and tested: parse and
-stringify between Zig types and `Value`, read and write JSON with line:col diagnostics
-(JSONTestSuite, a seeded round-trip property), and query or patch a `Value` with JSON Pointer,
-Merge Patch, Patch and JSONPath (the RFC 9535 compliance suite; `match`/`search` are unsupported).
-Benchmarks are in `docs/plans/000-inherited.md`. Every other module
-in the table below is an empty stub that declares only its error set; no TOML, YAML, MessagePack,
-CBOR, Protobuf or CSV can be read or written yet. `docs/PRD.md` has the full design. The API is
-unstable and may change between 0.x minors.
+`sigil.core`, `sigil.reflect`, `sigil.json`, `sigil.path`, `sigil.toml`, `sigil.msgpack` and
+`sigil.cbor` are implemented and tested: parse and stringify between Zig types and `Value`, read
+and write JSON, TOML 1.0, MessagePack and CBOR with line:col diagnostics (JSONTestSuite, toml-test,
+RFC 8949 and msgpack-test-suite vectors, seeded round-trip and mutation properties), and query or
+patch a `Value` with JSON Pointer, Merge Patch, Patch and JSONPath (the RFC 9535 compliance suite;
+`match`/`search` are unsupported). Benchmarks are in `docs/plans/000-inherited.md`. Every other
+module in the table below is an empty stub that declares only its error set; no YAML, Protobuf or
+CSV can be read or written yet. `docs/PRD.md` has the full design. The API is unstable and may
+change between 0.x minors.
 
 ## Modules
 
@@ -29,17 +30,17 @@ unstable and may change between 0.x minors.
 | `sigil.reflect` | Implemented (`Schema(T)` planned) | comptime struct ↔ Value mapping: parse(T), stringify(T), field options (rename, defaults, deny_unknown), custom hooks. Schema(T) validation is not built yet. |
 | `sigil.json` | Implemented | RFC 8259 strict pull scanner, DOM builder, minified/pretty writer, `parse(T)`/`stringify`, `parseFile`/`stringifyFile` with line:col diagnostics. Direct-to-struct streaming parse is not built yet. |
 | `sigil.path` | Implemented | JSON Pointer (RFC 6901), JSONPath (RFC 9535 without `match`/`search`), JSON Patch (RFC 6902), Merge Patch (RFC 7386) — all over Value, no recursion, no allocation after setup. |
-| `sigil.toml` | Parser landed (`parse`, `parse_value`, passes toml-test 1.0.0); writer pending | TOML v1.0.0 lexer, parser, writer (order-preserving). toml-test suite. |
+| `sigil.toml` | Implemented | TOML v1.0.0 lexer, parser, order-preserving writer; `parse`/`parse_value`, `stringify`/`write_value`; passes toml-test. |
 | `sigil.yaml` | Planned | YAML 1.2 core-schema subset: block/flow collections, scalars, anchors/aliases (bounded), multi-doc. |
-| `sigil.msgpack` | Planned | MessagePack encoder/decoder, all types + ext, zero-copy bin/str. |
-| `sigil.cbor` | Planned | CBOR (RFC 8949) core + tags 0–3, deterministic encoding option. |
+| `sigil.msgpack` | Implemented | MessagePack decoder and encoder: `parse`/`parse_value`, `stringify`/`write_value`, timestamp extension, shortest-form heads. |
+| `sigil.cbor` | Implemented | CBOR (RFC 8949) decoder and encoder: `parse`/`parse_value`, `stringify`/`write_value`, tags, indefinite items, deterministic encoding option. |
 | `sigil.proto` | Planned | Protobuf wire format (varint/64/len/32) with comptime field-number mapping — no schema compiler. |
 | `sigil.csv` | Planned | RFC 4180 reader/writer, configurable delimiter/quote, header → struct mapping. |
 | `sigil.config` | Planned | Layered config: defaults < files < env < args; schema validation; poll-based `Watcher`. The final `io: Io` signatures are in `docs/adr/0001-io-convention.md`; no code ships until Phase 5. |
 
 ## Install
 
-The latest tag is v0.4.0. Fetch it with `zig fetch --save <release tarball URL>` from the
+The latest tag is v0.6.0. Fetch it with `zig fetch --save <release tarball URL>` from the
 [releases page](https://github.com/yusa-imit/sigil/releases), then:
 
 ```zig
