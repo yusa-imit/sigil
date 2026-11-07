@@ -2,7 +2,11 @@
 
 > Marks that carry meaning — serialization and configuration formats for Zig
 
-sigil은 하나의 `Value` 중간 표현과 comptime 리플렉션(struct ↔ Value) 위에 JSON(+JSONPath/Pointer/Patch), TOML 1.0, YAML 1.2 코어 서브셋, MessagePack, CBOR, Protobuf 와이어 포맷, CSV를 제공하고, 파일+환경변수+CLI 인자를 병합하는 계층형 설정 로더를 포함할 예정이다. 모든 파서는 line:col 진단을 내고 fuzz로 검증될 예정이다. zr의 TOML/YAML, zoltraak의 JSON/JSONPath, silica의 JSON 타입, synod의 메시지 인코딩이 이 위로 이식될 계획이다.
+sigil은 하나의 `Value` 중간 표현과 comptime 리플렉션(struct ↔ Value) 위에 JSON(+JSONPath/Pointer/
+Patch), TOML 1.0, MessagePack, CBOR을 제공한다. 모든 파서는 line:col 진단을 내고 시드 기반
+속성 테스트와 공식 테스트 스위트로 검증된다. YAML 1.2 코어 서브셋, Protobuf 와이어 포맷, CSV,
+파일+환경변수+CLI 인자를 병합하는 계층형 설정 로더는 아직 구현되지 않았다. zr의 TOML/YAML,
+zoltraak의 JSON/JSONPath, silica의 JSON 타입, synod의 메시지 인코딩이 이 위로 이식될 계획이다.
 
 [![CI](https://github.com/yusa-imit/sigil/workflows/CI/badge.svg)](https://github.com/yusa-imit/sigil/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)

@@ -1,21 +1,26 @@
 # sigil — Product Requirements Document
 
 > **sigil**: 의미를 새긴 기호. Zig 왕국의 직렬화 & 설정 포맷 라이브러리.
-> Layer: **Foundation** · Consumers: zr (TOML/YAML/JSON), zoltraak (JSON/JSONPath), silica (JSON 타입, 설정), synod (메시지 인코딩), sailor (state_persist)
+> Layer: **Foundation** · Consumers: zr (TOML/YAML/JSON), zoltraak (JSON/JSONPath),
+> silica (JSON 타입, 설정), synod (메시지 인코딩), sailor (state_persist)
 
 ---
 
 ## 1. 배경과 문제
 
-zr은 TOML과 YAML 파서를 직접 갖고 있고 `std.json`을 15개 파일에서 쓴다. zoltraak는 `storage/{json_value,jsonpath}.zig`로 JSON 트리와 JSONPath를 구현했다. silica는 SQL JSON/JSONB 타입을 위해 또 다른 JSON 표현을 가진다. sailor는 `state_persist.zig`에서 자체 직렬화를 한다.
+zr은 TOML과 YAML 파서를 직접 갖고 있고 `std.json`을 15개 파일에서 쓴다. zoltraak는
+`storage/{json_value,jsonpath}.zig`로 JSON 트리와 JSONPath를 구현했다. silica는 SQL JSON/JSONB
+타입을 위해 또 다른 JSON 표현을 가진다. sailor는 `state_persist.zig`에서 자체 직렬화를 한다.
 
 같은 "값 트리 ↔ 바이트" 문제를 네 번 풀고 있다. 포맷은 달라도 **중간 표현(Value)과 comptime 리플렉션(struct ↔ Value)** 은 하나면 된다.
 
 ## 2. 목표 (Goals)
 
 1. **하나의 `Value` 중간 표현**: null/bool/int/float/string/bytes/array/map + 타임스탬프. 모든 포맷이 이 위에서 동작
-2. **comptime 리플렉션**: `sigil.parse(T, bytes)`, `sigil.stringify(value)` — 구조체 필드 이름/타입/기본값/옵셔널을 컴파일 타임에 매핑. 커스텀 `sigilParse`/`sigilStringify` 훅
-3. **포맷**: JSON(+JSONPath, JSON Patch, JSON Schema 서브셋), TOML 1.0, YAML 1.2 코어 서브셋, MessagePack, CBOR, Protobuf 와이어 포맷, CSV
+2. **comptime 리플렉션**: `sigil.parse(T, bytes)`, `sigil.stringify(value)` — 구조체 필드
+   이름/타입/기본값/옵셔널을 컴파일 타임에 매핑. 커스텀 `sigilParse`/`sigilStringify` 훅
+3. **포맷**: JSON(+JSONPath, JSON Patch, JSON Schema 서브셋), TOML 1.0, YAML 1.2 코어 서브셋,
+   MessagePack, CBOR, Protobuf 와이어 포맷, CSV
 4. **스트리밍**: 대용량을 위한 pull 파서(토큰 이벤트) — DOM 없이 처리 가능
 5. **설정 계층화**: 파일(TOML/YAML/JSON) + 환경변수 + CLI 인자 → 하나의 타입된 Config. 핫 리로드 훅
 6. **제로 의존성**, allocator-first, 파서는 fuzz 필수
