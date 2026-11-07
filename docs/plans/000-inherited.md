@@ -1,4 +1,5 @@
-> Inherited roadmap, frozen at the kingdom restructure (2026-09-05). New work is planned in docs/plans/NNN-*.md via plan PRs (citadel/protocol/GITHUB.md).
+> Inherited roadmap, frozen at the kingdom restructure (2026-09-05). New work is planned in
+> docs/plans/NNN-*.md via plan PRs (citadel/protocol/GITHUB.md).
 
 # sigil — Milestones
 
@@ -76,5 +77,6 @@
 
 측정 조건: Apple Silicon 로컬, `zig build bench` (ReleaseFast), 시드 고정 약 1 MiB 생성 문서(twitter.json
 아님), 16회 반복, 워밍업 1회 제외, 수 회 실행 중 근사 중앙값. 첫 벤치는 실행 순서에 따라 최대 약 20% 흔들린다. 목표 미달은 plan 004의
-범위 밖이며(측정만 수행), 튜닝은 별도 plan에서 다룬다. TOML 행은 시드 고정 약 100 KB `[[records]]` 문서에 256회 반복. msgpack/CBOR 행은 같은 JSON 문서의 트리를 각 형식으로
+범위 밖이며(측정만 수행), 튜닝은 별도 plan에서 다룬다.
+TOML 행은 시드 고정 약 100 KB `[[records]]` 문서에 256회 반복. msgpack/CBOR 행은 같은 JSON 문서의 트리를 각 형식으로
 인코딩한 입력(약 740/730 KB)에 16회 반복. 인코딩 MB/s는 출력 바이트 기준.
