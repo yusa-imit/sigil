@@ -155,14 +155,15 @@ var cfg = try sigil.config.load(AppConfig, allocator, .{
 
 ## 5. 성능 목표
 
-| 지표 | 목표 |
-|---|---|
-| JSON 파싱 (DOM, 1MB, twitter.json) | > 500 MB/s |
-| JSON 파싱 (reflect → struct) | > 300 MB/s |
-| JSON 직렬화 | > 800 MB/s |
-| TOML 파싱 (100KB) | < 1 ms |
-| MessagePack 인코딩 | > 1 GB/s |
-| 메모리 | DOM 아레나 ≤ 문자열·키 원문 길이 + 배열 원소당 32 B + 객체 멤버당 48 B + 컨테이너당 4 B (ADR 0003 §4; 32 B `Value`로는 2×가 불가능). 벤치가 입력 바이트당 아레나 바이트를 기록 |
+| 지표 | 목표 | 측정 (v0.6.0, 벤치 기록) |
+|---|---|---|
+| JSON 파싱 (DOM, 1MB, twitter.json) | > 500 MB/s | 미달, ~145-175 MB/s |
+| JSON 파싱 (reflect → struct) | > 300 MB/s | 미측정 |
+| JSON 직렬화 | > 800 MB/s | 미달, ~480-490 MB/s (minified) |
+| TOML 파싱 (100KB) | < 1 ms | ~228 MB/s (100KB ≈ 0.4 ms) |
+| MessagePack 인코딩 | > 1 GB/s | 미달, 591 MB/s (디코딩 303 MB/s) |
+| CBOR 인코딩/디코딩 | (목표 없음) | 537 / 144 MB/s |
+| 메모리 | DOM 아레나 ≤ 문자열·키 원문 길이 + 배열 원소당 32 B + 객체 멤버당 48 B + 컨테이너당 4 B (ADR 0003 §4; 32 B `Value`로는 2×가 불가능). 벤치가 입력 바이트당 아레나 바이트를 기록 | | 벤치 출력의 arena 바이트/입력 바이트 |
 
 ## 6. 마일스톤
 
