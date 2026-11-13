@@ -158,7 +158,7 @@ var cfg = try sigil.config.load(AppConfig, allocator, .{
 | 지표 | 목표 | 측정 (v0.6.0, 벤치 기록) |
 |---|---|---|
 | JSON 파싱 (DOM, 1MB, twitter.json) | > 500 MB/s | 미달, ~145-175 MB/s |
-| JSON 파싱 (reflect → struct) | > 300 MB/s | 미측정 |
+| JSON 파싱 (reflect → struct) | > 300 MB/s | 미달, ~160 MB/s (`json.parse(T)`, DOM 경유) |
 | JSON 직렬화 | > 800 MB/s | 미달, ~480-490 MB/s (minified) |
 | TOML 파싱 (100KB) | < 1 ms | ~228 MB/s (100KB ≈ 0.4 ms) |
 | MessagePack 인코딩 | > 1 GB/s | 미달, 591 MB/s (디코딩 303 MB/s) |
